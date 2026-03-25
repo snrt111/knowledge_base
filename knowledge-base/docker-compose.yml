@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # pgvector 向量数据库
+  pgvector:
+    image: ankane/pgvector:latest
+    container_name: kb-pgvector
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: knowledge_base
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+      - ./docker/pgvector/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - kb-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgvector_data:
+    driver: local
+
+networks:
+  kb-network:
+    driver: bridge

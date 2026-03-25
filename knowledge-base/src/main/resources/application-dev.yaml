@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/knowledge_base
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: postgres
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+  ai:
+    zhipuai:
+      api-key: ${ZHIPUAI_API_KEY:2ed1fcc2d4cc4472811ecbbda85e2c07.Ryu8O8jAw14CZsta}
+      chat:
+        options:
+          model: glm-4.7-flash
+          temperature: 0.7
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 768
+        max-document-batch-size: 10000
+
+# 大模型提供商配置: zhipuai 或 ollama
+chat:
+  model:
+    provider: ollama
+
+logging:
+  level:
+    com.snrt.knowledgebase: DEBUG
+    org.springframework.ai: DEBUG
