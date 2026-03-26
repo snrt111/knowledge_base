@@ -126,7 +126,7 @@
             :on-change="handleFileChange"
             :on-remove="handleFileRemove"
             :file-list="uploadForm.fileList"
-            accept=".pdf,.doc,.docx,.txt,.md"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.txt"
             multiple
           >
             <el-icon class="el-icon--upload"><upload-filled /></el-icon>
@@ -135,7 +135,7 @@
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持 PDF、Word、TXT、Markdown 格式，单个文件不超过 50MB
+                支持 PDF、Word、Excel、PPT、Markdown、TXT 格式，单个文件不超过 50MB
               </div>
             </template>
           </el-upload>
@@ -181,49 +181,15 @@
         </div>
         <el-divider />
         <div class="preview-body">
-          <!-- 文本预览 -->
-          <div v-if="previewDialog.data?.previewType === 'text'" class="text-preview">
-            <pre class="text-content">{{ previewDialog.data?.content }}</pre>
-          </div>
-          <!-- PDF预览 -->
-          <div v-else-if="previewDialog.data?.previewType === 'pdf'" class="pdf-preview">
-            <iframe
-              :src="previewDialog.data?.downloadUrl"
-              width="100%"
-              height="600px"
-              frameborder="0"
-            ></iframe>
-          </div>
-          <!-- Word预览 -->
-          <div v-else-if="previewDialog.data?.previewType === 'word'" class="word-preview">
-            <el-result
-              icon="info"
-              title="Word文档预览"
-              sub-title="Word文档暂不支持在线预览，请点击下载按钮查看"
-            >
-              <template #extra>
-                <el-button type="primary" @click="handleDownloadFromPreview">
-                  <el-icon><Download /></el-icon>
-                  下载查看
-                </el-button>
-              </template>
-            </el-result>
-          </div>
-          <!-- 不支持的格式 -->
-          <div v-else class="unsupported-preview">
-            <el-result
-              :icon="previewDialog.data?.errorMessage ? 'error' : 'warning'"
-              :title="previewDialog.data?.errorMessage ? '预览失败' : '暂不支持预览'"
-              :sub-title="previewDialog.data?.errorMessage || '该文件格式暂不支持在线预览'"
-            >
-              <template #extra>
-                <el-button type="primary" @click="handleDownloadFromPreview">
-                  <el-icon><Download /></el-icon>
-                  下载查看
-                </el-button>
-              </template>
-            </el-result>
-          </div>
+          <!-- 使用 DocumentViewer 组件预览 -->
+          <DocumentViewer
+            v-if="previewDialog.data"
+            :preview-type="previewDialog.data.previewType"
+            :content="previewDialog.data.content"
+            :download-url="previewDialog.data.downloadUrl"
+            :file-type="previewDialog.data.type"
+            :error-message="previewDialog.data.errorMessage"
+          />
         </div>
       </div>
     </el-dialog>
@@ -237,6 +203,7 @@ import type { UploadFile, UploadFiles } from 'element-plus'
 import { useRoute } from 'vue-router'
 import { documentApi } from '@/api/document'
 import { knowledgeBaseApi } from '@/api/knowledgeBase'
+import DocumentViewer from '@/components/DocumentViewer.vue'
 import type { Document, DocumentPreview, KnowledgeBase } from '@/types'
 
 const route = useRoute()
@@ -306,8 +273,12 @@ const getFileIconColor = (type: string) => {
     pdf: '#FF6B6B',
     doc: '#409EFF',
     docx: '#409EFF',
-    txt: '#67C23A',
-    md: '#909399'
+    xls: '#67C23A',
+    xlsx: '#67C23A',
+    ppt: '#E6A23C',
+    pptx: '#E6A23C',
+    txt: '#909399',
+    md: '#409EFF'
   }
   return colors[type] || '#909399'
 }
@@ -317,8 +288,12 @@ const getFileTypeTag = (type: string) => {
     pdf: 'danger',
     doc: 'primary',
     docx: 'primary',
-    txt: 'success',
-    md: 'info'
+    xls: 'success',
+    xlsx: 'success',
+    ppt: 'warning',
+    pptx: 'warning',
+    txt: 'info',
+    md: 'primary'
   }
   return types[type] || 'info'
 }
@@ -439,6 +414,8 @@ const getPreviewTypeTag = (type?: string) => {
     text: 'success',
     pdf: 'warning',
     word: 'primary',
+    excel: 'success',
+    ppt: 'danger',
     unsupported: 'info'
   }
   return tags[type || ''] || 'info'
@@ -449,6 +426,8 @@ const getPreviewTypeText = (type?: string) => {
     text: '文本预览',
     pdf: 'PDF预览',
     word: 'Word文档',
+    excel: 'Excel文档',
+    ppt: 'PPT文档',
     unsupported: '不支持预览'
   }
   return texts[type || ''] || '未知'
@@ -576,7 +555,17 @@ onMounted(() => {
 }
 
 .word-preview,
+.excel-preview,
+.ppt-preview,
 .unsupported-preview {
   padding: 40px 0;
+}
+</style>
+
+<style>
+/* 预览对话框全局样式 */
+.preview-dialog .el-dialog__body {
+  max-height: calc(90vh - 200px);
+  overflow: hidden;
 }
 </style>

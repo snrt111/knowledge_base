@@ -12,4 +12,6 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, String
     List<ChatMessage> findBySessionIdOrderByCreateTimeAsc(String sessionId);
 
     void deleteBySessionId(String sessionId);
+
+    long countBySessionId(String sessionId);
 }

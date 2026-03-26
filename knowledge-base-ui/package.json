@@ -12,10 +12,15 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "@js-preview/docx": "^1.0.3",
+    "@js-preview/excel": "^1.0.3",
+    "@js-preview/pdf": "^1.0.3",
     "axios": "^1.13.6",
+    "docx-preview": "^0.3.2",
     "element-plus": "^2.13.6",
     "highlight.js": "^11.11.1",
     "marked": "^17.0.5",
+    "pptxjs": "^0.0.0",
     "vue": "^3.5.30",
     "vue-router": "^4.6.4"
   },

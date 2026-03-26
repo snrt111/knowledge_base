@@ -1,9 +1,12 @@
 package com.snrt.knowledgebase.service;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.snrt.knowledgebase.constants.Constants;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.reader.tika.TikaDocumentReader;
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -13,68 +16,94 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class DocumentProcessingService {
 
-    private static final Logger log = LoggerFactory.getLogger(DocumentProcessingService.class);
     private final VectorStore vectorStore;
+    private final TokenTextSplitter textSplitter;
 
     public DocumentProcessingService(VectorStore vectorStore) {
         this.vectorStore = vectorStore;
+        this.textSplitter = new TokenTextSplitter(
+                Constants.VectorStore.CHUNK_SIZE,
+                Constants.VectorStore.CHUNK_OVERLAP,
+                Constants.VectorStore.CHUNK_SIZE,
+                Constants.VectorStore.CHUNK_OVERLAP,
+                true
+        );
     }
 
     public void processAndIndexDocument(Path filePath, String documentId, String knowledgeBaseId) {
         try {
-            // 1. 读取文档内容
             List<Document> documents = readDocument(filePath);
 
-            // 2. 为文档添加元数据
             List<Document> documentsWithMetadata = new ArrayList<>();
             for (Document doc : documents) {
-                doc.getMetadata().put("documentId", documentId);
-                doc.getMetadata().put("knowledgeBaseId", knowledgeBaseId);
-                doc.getMetadata().put("chunkId", UUID.randomUUID().toString());
+                doc.getMetadata().put(Constants.VectorStore.METADATA_DOCUMENT_ID, documentId);
+                doc.getMetadata().put(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_ID, knowledgeBaseId);
+                doc.getMetadata().put(Constants.VectorStore.METADATA_CHUNK_ID, UUID.randomUUID().toString());
                 documentsWithMetadata.add(doc);
             }
 
-            // 3. 向量化并存储到向量数据库
             vectorStore.add(documentsWithMetadata);
 
             log.info("文档处理完成：{}，解析为 {} 个文档块", filePath.getFileName(), documents.size());
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("文档处理失败: {}", filePath, e);
             throw new RuntimeException("文档处理失败: " + e.getMessage());
         }
     }
 
     private List<Document> readDocument(Path filePath) throws IOException {
+        String fileName = filePath.getFileName().toString().toLowerCase();
+        
+        if (fileName.endsWith(".txt") || fileName.endsWith(".md") || fileName.endsWith(".json")) {
+            return readTextDocument(filePath);
+        }
+        
+        return readWithTika(filePath);
+    }
+    
+    private List<Document> readTextDocument(Path filePath) throws IOException {
         List<Document> documents = new ArrayList<>();
         
-        // 读取文件内容
         String content = Files.readString(filePath);
         
-        // 简单的文档分块处理
-        int chunkSize = 1000;
+        int chunkSize = Constants.VectorStore.CHUNK_SIZE;
         for (int i = 0; i < content.length(); i += chunkSize) {
             int end = Math.min(i + chunkSize, content.length());
             String chunk = content.substring(i, end);
             
             Document document = new Document(chunk);
-            document.getMetadata().put("filePath", filePath.toString());
+            document.getMetadata().put(Constants.VectorStore.METADATA_FILE_PATH, filePath.toString());
             documents.add(document);
         }
         
         return documents;
     }
+    
+    private List<Document> readWithTika(Path filePath) {
+        TikaDocumentReader reader = new TikaDocumentReader(new FileSystemResource(filePath.toFile()));
+        List<Document> documents = reader.get();
+        
+        List<Document> splitDocuments = textSplitter.apply(documents);
+        
+        for (Document doc : splitDocuments) {
+            doc.getMetadata().put(Constants.VectorStore.METADATA_FILE_PATH, filePath.toString());
+        }
+        
+        return splitDocuments;
+    }
 
     public void deleteDocumentFromVectorStore(String documentId) {
         try {
-            // 从向量存储中删除指定文档的所有块
-            vectorStore.delete(documentId);
+            String filterExpression = String.format("%s in ['%s']", Constants.VectorStore.METADATA_DOCUMENT_ID, documentId);
+            vectorStore.delete(filterExpression);
+            log.info("从向量存储删除文档成功: documentId={}", documentId);
         } catch (Exception e) {
-            e.printStackTrace();
-            // 记录错误但不抛出异常，避免影响主流程
+            log.error("从向量存储删除文档失败: documentId={}", documentId, e);
         }
     }
 }

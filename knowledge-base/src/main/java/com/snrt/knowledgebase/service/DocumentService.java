@@ -1,19 +1,27 @@
 package com.snrt.knowledgebase.service;
 
+import com.snrt.knowledgebase.constants.Constants;
 import com.snrt.knowledgebase.dto.DocumentDTO;
 import com.snrt.knowledgebase.dto.DocumentPreviewDTO;
 import com.snrt.knowledgebase.dto.PageResult;
 import com.snrt.knowledgebase.entity.Document;
 import com.snrt.knowledgebase.entity.KnowledgeBase;
+import com.snrt.knowledgebase.enums.PreviewType;
+import com.snrt.knowledgebase.exception.DocumentException;
+import com.snrt.knowledgebase.exception.ResourceNotFoundException;
+import com.snrt.knowledgebase.mapper.DocumentMapper;
 import com.snrt.knowledgebase.repository.DocumentRepository;
 import com.snrt.knowledgebase.repository.KnowledgeBaseRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.document.DocumentReader;
+import org.springframework.ai.reader.tika.TikaDocumentReader;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,7 +34,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -37,8 +45,8 @@ public class DocumentService {
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final MinioService minioService;
     private final DocumentProcessingService documentProcessingService;
-
-    private static final String UPLOAD_DIR = "uploads/documents/";
+    private final DocumentEventPublisher eventPublisher;
+    private final DocumentMapper documentMapper;
 
     @Transactional(readOnly = true)
     public PageResult<DocumentDTO> listDocuments(Integer page, Integer size, String knowledgeBaseId, String keyword) {
@@ -56,37 +64,38 @@ public class DocumentService {
             docPage = documentRepository.findByIsDeletedFalse(pageable);
         }
 
-        List<DocumentDTO> dtoList = docPage.getContent().stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-
+        List<DocumentDTO> dtoList = documentMapper.toDTOList(docPage.getContent());
         return PageResult.of(dtoList, docPage.getTotalElements(), page, size);
     }
 
     @Transactional(readOnly = true)
     public DocumentDTO getDocument(String id) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("文档不存在"));
-        return convertToDTO(doc);
+                .orElseThrow(() -> DocumentException.notFound(id));
+        return documentMapper.toDTO(doc);
     }
 
     @Transactional
     public DocumentDTO uploadDocument(String knowledgeBaseId, MultipartFile file) {
         KnowledgeBase kb = knowledgeBaseRepository.findByIdAndIsDeletedFalse(knowledgeBaseId)
-                .orElseThrow(() -> new RuntimeException("知识库不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("知识库", knowledgeBaseId));
 
         String originalFilename = file.getOriginalFilename();
         String extension = getFileExtension(originalFilename);
+
+        if (file.getSize() > Constants.File.MAX_SIZE) {
+            throw DocumentException.fileTooLarge(String.valueOf(file.getSize()));
+        }
+
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String objectName = String.format("documents/%s/%s-%s.%s", 
+        String objectName = String.format("%s%s/%s-%s.%s",
+                Constants.File.MINIO_DOCUMENT_PREFIX,
                 timestamp, UUID.randomUUID().toString(), kb.getId(), extension);
 
         try {
-            // 上传到MinIO
             minioService.uploadFile(file, objectName);
 
-            // 同时保存到本地作为备份
-            Path uploadPath = Paths.get(UPLOAD_DIR);
+            Path uploadPath = Paths.get(Constants.File.UPLOAD_DIR);
             if (!Files.exists(uploadPath)) {
                 Files.createDirectories(uploadPath);
             }
@@ -108,21 +117,20 @@ public class DocumentService {
             processDocumentAsync(saved);
 
             log.info("文档上传成功: id={}, name={}, objectName={}", saved.getId(), originalFilename, objectName);
-            return convertToDTO(saved);
+            return documentMapper.toDTO(saved);
         } catch (Exception e) {
             log.error("文件上传失败: {}", e.getMessage(), e);
-            throw new RuntimeException("文件上传失败: " + e.getMessage());
+            throw DocumentException.uploadFailed(e.getMessage(), e);
         }
     }
 
     @Transactional
     public void deleteDocument(String id) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("文档不存在"));
+                .orElseThrow(() -> DocumentException.notFound(id));
         doc.setIsDeleted(true);
         documentRepository.save(doc);
 
-        // 从向量存储中删除文档向量
         try {
             documentProcessingService.deleteDocumentFromVectorStore(id);
             log.info("向量存储中删除成功: documentId={}", id);
@@ -130,7 +138,6 @@ public class DocumentService {
             log.warn("向量存储中删除失败: documentId={}, error={}", id, e.getMessage());
         }
 
-        // 删除MinIO中的文件
         if (doc.getObjectName() != null) {
             try {
                 minioService.deleteFile(doc.getObjectName());
@@ -140,7 +147,6 @@ public class DocumentService {
             }
         }
 
-        // 删除本地文件
         try {
             Path localPath = Paths.get(doc.getFilePath());
             if (Files.exists(localPath)) {
@@ -155,9 +161,8 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public InputStream downloadDocument(String id) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("文档不存在"));
+                .orElseThrow(() -> DocumentException.notFound(id));
 
-        // 优先从MinIO下载
         if (doc.getObjectName() != null && minioService.fileExists(doc.getObjectName())) {
             try {
                 log.info("从MinIO下载文档: id={}, objectName={}", id, doc.getObjectName());
@@ -167,7 +172,6 @@ public class DocumentService {
             }
         }
 
-        // 从本地文件下载
         try {
             Path localPath = Paths.get(doc.getFilePath());
             if (Files.exists(localPath)) {
@@ -178,13 +182,13 @@ public class DocumentService {
             log.error("本地文件读取失败: id={}, error={}", id, e.getMessage());
         }
 
-        throw new RuntimeException("文件不存在或无法读取");
+        throw DocumentException.fileReadError("文件不存在或无法读取");
     }
 
     @Transactional(readOnly = true)
     public String getDocumentUrl(String id, int expiryHours) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("文档不存在"));
+                .orElseThrow(() -> DocumentException.notFound(id));
 
         if (doc.getObjectName() != null) {
             try {
@@ -199,116 +203,130 @@ public class DocumentService {
 
     @Transactional(readOnly = true)
     public List<DocumentDTO> listDocumentsByKnowledgeBase(String knowledgeBaseId) {
-        return documentRepository.findByKnowledgeBaseIdAndIsDeletedFalse(knowledgeBaseId)
-                .stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+        return documentMapper.toDTOList(
+                documentRepository.findByKnowledgeBaseIdAndIsDeletedFalse(knowledgeBaseId)
+        );
     }
 
     @Transactional(readOnly = true)
     public DocumentPreviewDTO previewDocument(String id) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
-                .orElseThrow(() -> new RuntimeException("文档不存在"));
+                .orElseThrow(() -> DocumentException.notFound(id));
 
-        DocumentPreviewDTO previewDTO = new DocumentPreviewDTO();
-        previewDTO.setId(doc.getId());
-        previewDTO.setName(doc.getName());
-        previewDTO.setType(doc.getType());
-        previewDTO.setSize(doc.getSize());
-        previewDTO.setKnowledgeBaseName(doc.getKnowledgeBase().getName());
-        previewDTO.setUploadTime(doc.getCreateTime());
+        DocumentPreviewDTO preview = new DocumentPreviewDTO();
+        preview.setId(doc.getId());
+        preview.setName(doc.getName());
+        preview.setType(doc.getType());
+        preview.setSize(doc.getSize());
+        preview.setKnowledgeBaseName(doc.getKnowledgeBase() != null ? doc.getKnowledgeBase().getName() : "");
+        preview.setUploadTime(doc.getCreateTime());
 
-        // 根据文件类型设置内容
-        if (isTextFile(doc.getType())) {
+        PreviewType previewType = PreviewType.fromExtension(doc.getType());
+        preview.setPreviewType(previewType.getCode());
+
+        if (previewType == PreviewType.UNSUPPORTED) {
+            preview.setErrorMessage("该文件类型暂不支持预览，请下载后查看");
+            preview.setDownloadUrl("/api/document/" + id + "/download");
+            return preview;
+        }
+
+        // PDF、Word、Excel、PPT 使用前端预览库渲染，需要提供下载URL
+        if (previewType == PreviewType.PDF || previewType == PreviewType.WORD
+                || previewType == PreviewType.EXCEL || previewType == PreviewType.PPT) {
+            preview.setDownloadUrl("/api/document/" + id + "/download");
+            return preview;
+        }
+
+        // 文本类型（txt、md）提取内容返回
+        try {
+            InputStream inputStream = getDocumentInputStream(doc);
+            if (inputStream == null) {
+                preview.setErrorMessage("无法读取文件内容");
+                return preview;
+            }
+
+            String content = extractTextContent(inputStream, doc.getType());
+            preview.setContent(content);
+        } catch (Exception e) {
+            log.error("文档预览失败: id={}, error={}", id, e.getMessage(), e);
+            preview.setErrorMessage("文件内容提取失败: " + e.getMessage());
+        }
+
+        return preview;
+    }
+
+    private InputStream getDocumentInputStream(Document doc) {
+        if (doc.getObjectName() != null && minioService.fileExists(doc.getObjectName())) {
             try {
-                String content = readTextContent(doc);
-                previewDTO.setContent(content);
-                previewDTO.setPreviewType("text");
+                return minioService.downloadFile(doc.getObjectName());
             } catch (Exception e) {
-                log.error("读取文本文件失败: id={}, error={}", id, e.getMessage());
-                previewDTO.setPreviewType("unsupported");
-                previewDTO.setErrorMessage("无法读取文件内容: " + e.getMessage());
-            }
-        } else if (isPdfFile(doc.getType())) {
-            previewDTO.setPreviewType("pdf");
-            previewDTO.setDownloadUrl("/api/document/" + id + "/download");
-        } else if (isWordFile(doc.getType())) {
-            previewDTO.setPreviewType("word");
-            previewDTO.setDownloadUrl("/api/document/" + id + "/download");
-        } else {
-            previewDTO.setPreviewType("unsupported");
-            previewDTO.setDownloadUrl("/api/document/" + id + "/download");
-        }
-
-        return previewDTO;
-    }
-
-    private boolean isTextFile(String type) {
-        return "txt".equalsIgnoreCase(type) || "md".equalsIgnoreCase(type) ||
-               "json".equalsIgnoreCase(type) || "xml".equalsIgnoreCase(type) ||
-               "html".equalsIgnoreCase(type) || "htm".equalsIgnoreCase(type) ||
-               "js".equalsIgnoreCase(type) || "css".equalsIgnoreCase(type) ||
-               "java".equalsIgnoreCase(type) || "py".equalsIgnoreCase(type) ||
-               "sql".equalsIgnoreCase(type) || "yaml".equalsIgnoreCase(type) ||
-               "yml".equalsIgnoreCase(type) || "properties".equalsIgnoreCase(type);
-    }
-
-    private boolean isPdfFile(String type) {
-        return "pdf".equalsIgnoreCase(type);
-    }
-
-    private boolean isWordFile(String type) {
-        return "doc".equalsIgnoreCase(type) || "docx".equalsIgnoreCase(type);
-    }
-
-    private String readTextContent(Document doc) throws Exception {
-        // 优先从本地读取
-        Path localPath = Paths.get(doc.getFilePath());
-        if (Files.exists(localPath)) {
-            return Files.readString(localPath);
-        }
-
-        // 从MinIO读取
-        if (doc.getObjectName() != null) {
-            try (InputStream is = minioService.downloadFile(doc.getObjectName())) {
-                return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                log.warn("从MinIO获取文件失败: id={}, error={}", doc.getId(), e.getMessage());
             }
         }
 
-        throw new RuntimeException("文件不存在");
+        try {
+            Path localPath = Paths.get(doc.getFilePath());
+            if (Files.exists(localPath)) {
+                return Files.newInputStream(localPath);
+            }
+        } catch (Exception e) {
+            log.error("本地文件读取失败: id={}, error={}", doc.getId(), e.getMessage());
+        }
+
+        return null;
     }
 
-    private void processDocumentAsync(Document document) {
-        new Thread(() -> {
+    private String extractTextContent(InputStream inputStream, String fileType) {
+        try {
+            DocumentReader reader = new TikaDocumentReader(new InputStreamResource(inputStream));
+            List<org.springframework.ai.document.Document> documents = reader.read();
+
+            if (documents.isEmpty()) {
+                return "";
+            }
+
+            StringBuilder content = new StringBuilder();
+            for (org.springframework.ai.document.Document document : documents) {
+                content.append(document.getText()).append("\n");
+            }
+
+            return content.toString().trim();
+        } catch (Exception e) {
+            log.error("文本提取失败: error={}", e.getMessage(), e);
+            throw new RuntimeException("文本提取失败: " + e.getMessage());
+        }
+    }
+
+
+    @Async(Constants.Async.DOCUMENT_PROCESSOR_EXECUTOR)
+    public CompletableFuture<Void> processDocumentAsync(Document document) {
+        return CompletableFuture.runAsync(() -> {
             try {
-                // 处理文档：解析、向量化和存储到向量数据库
                 Path filePath = Paths.get(document.getFilePath());
                 String knowledgeBaseId = document.getKnowledgeBase().getId();
+
+                eventPublisher.publishStatusChanged(this, document, Document.DocumentStatus.PROCESSING);
+
                 documentProcessingService.processAndIndexDocument(filePath, document.getId(), knowledgeBaseId);
-                
+
+                Document.DocumentStatus oldStatus = document.getStatus();
                 document.setStatus(Document.DocumentStatus.COMPLETED);
                 documentRepository.save(document);
+
+                eventPublisher.publishStatusChanged(this, document, oldStatus, Document.DocumentStatus.COMPLETED);
+
                 log.info("文档处理完成: id={}, name={}", document.getId(), document.getName());
             } catch (Exception e) {
+                Document.DocumentStatus oldStatus = document.getStatus();
                 document.setStatus(Document.DocumentStatus.FAILED);
                 documentRepository.save(document);
-                log.error("文档处理失败: id={}, name={}, error={}", 
+
+                eventPublisher.publishStatusChanged(this, document, oldStatus, Document.DocumentStatus.FAILED);
+
+                log.error("文档处理失败: id={}, name={}, error={}",
                         document.getId(), document.getName(), e.getMessage(), e);
             }
-        }).start();
-    }
-
-    private DocumentDTO convertToDTO(Document doc) {
-        DocumentDTO dto = new DocumentDTO();
-        dto.setId(doc.getId());
-        dto.setName(doc.getName());
-        dto.setKnowledgeBaseId(doc.getKnowledgeBase().getId());
-        dto.setKnowledgeBaseName(doc.getKnowledgeBase().getName());
-        dto.setType(doc.getType());
-        dto.setSize(doc.getSize());
-        dto.setStatus(doc.getStatus().name().toLowerCase());
-        dto.setUploadTime(doc.getCreateTime());
-        return dto;
+        });
     }
 
     private String getFileExtension(String filename) {

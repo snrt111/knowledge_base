@@ -56,7 +56,7 @@ export interface DocumentPreview {
   size: number
   knowledgeBaseName: string
   uploadTime: string
-  previewType: 'text' | 'pdf' | 'word' | 'unsupported'
+  previewType: 'text' | 'pdf' | 'word' | 'excel' | 'ppt' | 'unsupported'
   content?: string
   downloadUrl?: string
   errorMessage?: string

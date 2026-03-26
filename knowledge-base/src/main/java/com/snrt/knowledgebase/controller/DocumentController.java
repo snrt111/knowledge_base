@@ -2,6 +2,7 @@ package com.snrt.knowledgebase.controller;
 
 import com.snrt.knowledgebase.dto.ApiResponse;
 import com.snrt.knowledgebase.dto.DocumentDTO;
+import com.snrt.knowledgebase.dto.DocumentPreviewDTO;
 import com.snrt.knowledgebase.dto.PageResult;
 import com.snrt.knowledgebase.service.DocumentService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -95,7 +96,8 @@ public class DocumentController {
     }
 
     @GetMapping("/{id}/preview")
-    public ApiResponse<com.snrt.knowledgebase.dto.DocumentPreviewDTO> preview(@PathVariable String id) {
+    public ApiResponse<DocumentPreviewDTO> preview(@PathVariable String id) {
         return ApiResponse.success(documentService.previewDocument(id));
     }
+
 }
