@@ -18,22 +18,7 @@
     <div v-else-if="previewType === 'excel'" ref="excelContainer" class="excel-preview-container"></div>
     
     <!-- PPT 预览 -->
-    <div v-else-if="previewType === 'ppt'" ref="pptContainer" class="ppt-preview-container">
-      <div v-if="!pptLoaded" class="ppt-placeholder">
-        <el-result
-          icon="info"
-          title="PPT文档预览"
-          sub-title="PPT预览需要特殊处理，请点击下载查看"
-        >
-          <template #extra>
-            <el-button type="primary" @click="handleDownload">
-              <el-icon><Download /></el-icon>
-              下载查看
-            </el-button>
-          </template>
-        </el-result>
-      </div>
-    </div>
+    <div v-else-if="previewType === 'ppt'" ref="pptContainer" class="ppt-preview-container"></div>
     
     <!-- 不支持的格式 -->
     <div v-else class="unsupported-preview">
@@ -102,6 +87,16 @@ const initExcelPreview = async () => {
   }
 }
 
+const initPptxPreview = async () => {
+  try {
+    const module = await import('pptx-preview')
+    return module.default || module
+  } catch (e) {
+    console.error('PPT预览库加载失败:', e)
+    throw e
+  }
+}
+
 // 预览库实例类型
 type PdfPreviewType = {
   init: (container: HTMLElement, options?: any, requestOptions?: any) => { preview: (url: string) => void }
@@ -111,6 +106,15 @@ type DocxPreviewType = {
 }
 type ExcelPreviewType = {
   init: (container: HTMLElement, options?: any, requestOptions?: any) => { preview: (url: string) => void }
+}
+type PptxPreviewOptions = {
+  width?: number
+  height?: number
+  mode?: 'list' | 'slide'
+}
+
+type PptxPreviewType = {
+  init: (container: HTMLElement, options: PptxPreviewOptions) => { preview: (file: ArrayBuffer) => Promise<unknown> }
 }
 
 interface Props {
@@ -132,7 +136,6 @@ const pdfContainer = ref<HTMLElement>()
 const wordContainer = ref<HTMLElement>()
 const excelContainer = ref<HTMLElement>()
 const pptContainer = ref<HTMLElement>()
-const pptLoaded = ref(false)
 
 // 判断是否是 Markdown 文件
 const isMarkdown = computed(() => {
@@ -208,10 +211,30 @@ const previewExcel = async () => {
 // 预览 PPT
 const previewPpt = async () => {
   if (!pptContainer.value || !props.downloadUrl) return
-  
-  // PPT 预览较为复杂，暂时使用下载方式
-  // 后续可以集成 pptxjs 或其他库
-  pptLoaded.value = false
+
+  try {
+    pptContainer.value.innerHTML = ''
+    const fullUrl = getFullUrl(props.downloadUrl)
+
+    // 获取文件内容为 ArrayBuffer
+    const response = await fetch(fullUrl)
+    if (!response.ok) {
+      throw new Error('获取PPT文件失败')
+    }
+    const arrayBuffer = await response.arrayBuffer()
+
+    const pptxPreview = await initPptxPreview() as PptxPreviewType
+    // 获取容器宽度，用于设置预览选项
+    const containerWidth = pptContainer.value.clientWidth || 800
+    const instance = pptxPreview.init(pptContainer.value, {
+      width: containerWidth,
+      mode: 'list' // 列表模式，显示所有幻灯片
+    })
+    await instance.preview(arrayBuffer)
+  } catch (error) {
+    console.error('PPT预览失败:', error)
+    ElMessage.error('PPT预览加载失败')
+  }
 }
 
 // 初始化预览
@@ -377,8 +400,7 @@ watch(() => props.downloadUrl, (newUrl, oldUrl) => {
 }
 
 .pdf-preview-container,
-.word-preview-container,
-.excel-preview-container {
+.word-preview-container {
   width: 100%;
   height: 600px;
   border: 1px solid #e4e7ed;
@@ -386,13 +408,40 @@ watch(() => props.downloadUrl, (newUrl, oldUrl) => {
   overflow: auto;
 }
 
-.ppt-preview-container {
+.excel-preview-container {
   width: 100%;
-  min-height: 400px;
+  height: 600px;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
 }
 
-.ppt-placeholder {
-  padding: 40px 0;
+/* Excel 预览内部样式修复 - 针对 @js-preview/excel */
+.excel-preview-container :deep(.vue-office-excel) {
+  height: 600px !important;
+  max-height: 600px !important;
+}
+
+.excel-preview-container :deep(.x-spreadsheet) {
+  height: 600px !important;
+  max-height: 600px !important;
+}
+
+.excel-preview-container :deep(.x-spreadsheet-sheet) {
+  height: calc(600px - 41px) !important;
+}
+
+.excel-preview-container :deep(.x-spreadsheet-scrollbar) {
+  z-index: 100;
+}
+
+.ppt-preview-container {
+  width: 100%;
+  height: 600px;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  overflow: auto;
 }
 
 .unsupported-preview {
