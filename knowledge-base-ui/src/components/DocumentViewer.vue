@@ -1,25 +1,33 @@
 <template>
-  <div class="document-viewer">
+  <div class="document-viewer" :class="{ 'is-fullscreen': isFullscreen }">
+    <!-- 全屏切换按钮 -->
+    <div class="fullscreen-toggle" @click="toggleFullscreen">
+      <el-icon size="20">
+        <FullScreen v-if="!isFullscreen" />
+        <Close v-else />
+      </el-icon>
+    </div>
+
     <!-- Markdown 预览 -->
     <div v-if="previewType === 'text' && isMarkdown" class="markdown-preview" v-html="renderedMarkdown"></div>
-    
+
     <!-- 文本预览 -->
     <div v-else-if="previewType === 'text'" class="text-preview">
       <pre class="text-content">{{ content }}</pre>
     </div>
-    
+
     <!-- PDF 预览 -->
     <div v-else-if="previewType === 'pdf'" ref="pdfContainer" class="pdf-preview-container"></div>
-    
+
     <!-- Word 预览 -->
     <div v-else-if="previewType === 'word'" ref="wordContainer" class="word-preview-container"></div>
-    
+
     <!-- Excel 预览 -->
     <div v-else-if="previewType === 'excel'" ref="excelContainer" class="excel-preview-container"></div>
-    
+
     <!-- PPT 预览 -->
     <div v-else-if="previewType === 'ppt'" ref="pptContainer" class="ppt-preview-container"></div>
-    
+
     <!-- 不支持的格式 -->
     <div v-else class="unsupported-preview">
       <el-result
@@ -41,7 +49,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Download } from '@element-plus/icons-vue'
+import { Download, FullScreen, Close } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import 'highlight.js/styles/github.css'
 
@@ -136,6 +144,18 @@ const pdfContainer = ref<HTMLElement>()
 const wordContainer = ref<HTMLElement>()
 const excelContainer = ref<HTMLElement>()
 const pptContainer = ref<HTMLElement>()
+const isFullscreen = ref(false)
+
+// 切换全屏
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value
+  // 全屏状态改变后重新初始化预览以适配新尺寸
+  if (props.previewType && props.previewType !== 'text' && props.previewType !== 'unsupported') {
+    nextTick(() => {
+      initPreview()
+    })
+  }
+}
 
 // 判断是否是 Markdown 文件
 const isMarkdown = computed(() => {
@@ -273,6 +293,86 @@ watch(() => props.downloadUrl, (newUrl, oldUrl) => {
 .document-viewer {
   width: 100%;
   min-height: 400px;
+  position: relative;
+}
+
+/* 全屏切换按钮 */
+.fullscreen-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.fullscreen-toggle:hover {
+  background-color: #f5f7fa;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 全屏模式样式 */
+.document-viewer.is-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background-color: #fff;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.document-viewer.is-fullscreen .fullscreen-toggle {
+  top: 20px;
+  right: 20px;
+}
+
+.document-viewer.is-fullscreen .pdf-preview-container,
+.document-viewer.is-fullscreen .word-preview-container {
+  height: calc(100vh - 40px);
+}
+
+.document-viewer.is-fullscreen .excel-preview-container {
+  height: calc(100vh - 40px);
+}
+
+.document-viewer.is-fullscreen .excel-preview-container :deep(.vue-office-excel),
+.document-viewer.is-fullscreen .excel-preview-container :deep(.x-spreadsheet) {
+  height: calc(100vh - 40px) !important;
+  max-height: calc(100vh - 40px) !important;
+}
+
+.document-viewer.is-fullscreen .excel-preview-container :deep(.x-spreadsheet-sheet) {
+  height: calc(100vh - 81px) !important;
+}
+
+.document-viewer.is-fullscreen .ppt-preview-container {
+  height: calc(100vh - 40px);
+}
+
+.document-viewer.is-fullscreen .markdown-preview {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.document-viewer.is-fullscreen .text-preview {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.document-viewer.is-fullscreen .text-content {
+  max-height: calc(100vh - 72px);
 }
 
 .markdown-preview {
