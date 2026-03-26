@@ -46,5 +46,9 @@ export const chatApi = {
 
   deleteSession(id: string): Promise<void> {
     return axios.delete(`${API_BASE}/sessions/${id}`).then(res => res.data)
+  },
+
+  healthCheck(): Promise<void> {
+    return axios.get('/api/health').then(() => {})
   }
 }

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Document, PageResult } from '@/types'
+import type { Document, DocumentPreview, PageResult } from '@/types'
 
 const API_BASE = '/api'
 
@@ -29,5 +29,13 @@ export const documentApi = {
 
   delete(id: string): Promise<void> {
     return axios.delete(`${API_BASE}/document/${id}`).then(res => res.data)
+  },
+
+  preview(id: string): Promise<DocumentPreview> {
+    return axios.get(`${API_BASE}/document/${id}/preview`).then(res => res.data.data)
+  },
+
+  download(id: string): string {
+    return `${API_BASE}/document/${id}/download`
   }
 }

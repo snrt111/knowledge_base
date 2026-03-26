@@ -22,6 +22,9 @@ public class Document {
     @Column(nullable = false, length = 500)
     private String filePath;
 
+    @Column(name = "object_name", length = 200)
+    private String objectName;
+
     @Column(length = 50)
     private String type;
 

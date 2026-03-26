@@ -152,21 +152,78 @@
     <el-dialog
       v-model="previewDialog.visible"
       title="文档预览"
-      width="800px"
+      width="900px"
       class="preview-dialog"
+      destroy-on-close
     >
-      <div class="preview-content">
-        <h3>{{ previewDialog.document?.name }}</h3>
+      <div v-loading="previewDialog.loading" class="preview-content">
+        <div class="preview-header">
+          <h3>{{ previewDialog.data?.name }}</h3>
+          <div class="preview-actions">
+            <el-button type="primary" link @click="handleDownloadFromPreview">
+              <el-icon><Download /></el-icon>
+              下载
+            </el-button>
+          </div>
+        </div>
         <div class="preview-info">
-          <p><strong>所属知识库：</strong>{{ previewDialog.document?.knowledgeBaseName }}</p>
-          <p><strong>文件类型：</strong>{{ previewDialog.document?.type.toUpperCase() }}</p>
-          <p><strong>文件大小：</strong>{{ formatFileSize(previewDialog.document?.size || 0) }}</p>
-          <p><strong>上传时间：</strong>{{ previewDialog.document?.uploadTime }}</p>
+          <el-descriptions :column="3" size="small" border>
+            <el-descriptions-item label="所属知识库">{{ previewDialog.data?.knowledgeBaseName }}</el-descriptions-item>
+            <el-descriptions-item label="文件类型">{{ previewDialog.data?.type.toUpperCase() }}</el-descriptions-item>
+            <el-descriptions-item label="文件大小">{{ formatFileSize(previewDialog.data?.size || 0) }}</el-descriptions-item>
+            <el-descriptions-item label="上传时间">{{ previewDialog.data?.uploadTime }}</el-descriptions-item>
+            <el-descriptions-item label="预览类型">
+              <el-tag :type="getPreviewTypeTag(previewDialog.data?.previewType)">
+                {{ getPreviewTypeText(previewDialog.data?.previewType) }}
+              </el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
         </div>
         <el-divider />
-        <div class="preview-text">
-          <p>文档内容预览区域...</p>
-          <p>（实际项目中需要实现文档解析和预览功能）</p>
+        <div class="preview-body">
+          <!-- 文本预览 -->
+          <div v-if="previewDialog.data?.previewType === 'text'" class="text-preview">
+            <pre class="text-content">{{ previewDialog.data?.content }}</pre>
+          </div>
+          <!-- PDF预览 -->
+          <div v-else-if="previewDialog.data?.previewType === 'pdf'" class="pdf-preview">
+            <iframe
+              :src="previewDialog.data?.downloadUrl"
+              width="100%"
+              height="600px"
+              frameborder="0"
+            ></iframe>
+          </div>
+          <!-- Word预览 -->
+          <div v-else-if="previewDialog.data?.previewType === 'word'" class="word-preview">
+            <el-result
+              icon="info"
+              title="Word文档预览"
+              sub-title="Word文档暂不支持在线预览，请点击下载按钮查看"
+            >
+              <template #extra>
+                <el-button type="primary" @click="handleDownloadFromPreview">
+                  <el-icon><Download /></el-icon>
+                  下载查看
+                </el-button>
+              </template>
+            </el-result>
+          </div>
+          <!-- 不支持的格式 -->
+          <div v-else class="unsupported-preview">
+            <el-result
+              :icon="previewDialog.data?.errorMessage ? 'error' : 'warning'"
+              :title="previewDialog.data?.errorMessage ? '预览失败' : '暂不支持预览'"
+              :sub-title="previewDialog.data?.errorMessage || '该文件格式暂不支持在线预览'"
+            >
+              <template #extra>
+                <el-button type="primary" @click="handleDownloadFromPreview">
+                  <el-icon><Download /></el-icon>
+                  下载查看
+                </el-button>
+              </template>
+            </el-result>
+          </div>
         </div>
       </div>
     </el-dialog>
@@ -180,7 +237,7 @@ import type { UploadFile, UploadFiles } from 'element-plus'
 import { useRoute } from 'vue-router'
 import { documentApi } from '@/api/document'
 import { knowledgeBaseApi } from '@/api/knowledgeBase'
-import type { Document, KnowledgeBase } from '@/types'
+import type { Document, DocumentPreview, KnowledgeBase } from '@/types'
 
 const route = useRoute()
 const loading = ref(false)
@@ -213,7 +270,9 @@ const uploadForm = reactive({
 
 const previewDialog = reactive({
   visible: false,
-  document: null as Document | null
+  loading: false,
+  data: null as DocumentPreview | null,
+  currentDoc: null as Document | null
 })
 
 const fetchKnowledgeBases = async () => {
@@ -342,13 +401,57 @@ const handleUpload = async () => {
   }
 }
 
-const handlePreview = (row: Document) => {
-  previewDialog.document = row
+const handlePreview = async (row: Document) => {
+  previewDialog.currentDoc = row
   previewDialog.visible = true
+  previewDialog.loading = true
+
+  try {
+    const data = await documentApi.preview(row.id)
+    previewDialog.data = data
+  } catch (error) {
+    ElMessage.error('获取文档预览失败')
+    previewDialog.data = null
+  } finally {
+    previewDialog.loading = false
+  }
 }
 
 const handleDownload = (row: Document) => {
+  const url = documentApi.download(row.id)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = row.name
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
   ElMessage.success(`开始下载: ${row.name}`)
+}
+
+const handleDownloadFromPreview = () => {
+  if (previewDialog.currentDoc) {
+    handleDownload(previewDialog.currentDoc)
+  }
+}
+
+const getPreviewTypeTag = (type?: string) => {
+  const tags: Record<string, any> = {
+    text: 'success',
+    pdf: 'warning',
+    word: 'primary',
+    unsupported: 'info'
+  }
+  return tags[type || ''] || 'info'
+}
+
+const getPreviewTypeText = (type?: string) => {
+  const texts: Record<string, string> = {
+    text: '文本预览',
+    pdf: 'PDF预览',
+    word: 'Word文档',
+    unsupported: '不支持预览'
+  }
+  return texts[type || ''] || '未知'
 }
 
 const handleDelete = (row: Document) => {
@@ -423,22 +526,57 @@ onMounted(() => {
 }
 
 .preview-content {
+  max-height: 700px;
+  overflow-y: auto;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.preview-info {
+  margin-bottom: 16px;
+}
+
+.preview-body {
+  min-height: 300px;
+}
+
+.text-preview {
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  padding: 16px;
+}
+
+.text-content {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #303133;
   max-height: 500px;
   overflow-y: auto;
 }
 
-.preview-content h3 {
-  margin-bottom: 16px;
+.pdf-preview {
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-.preview-info p {
-  margin: 8px 0;
-  color: #606266;
-}
-
-.preview-text {
-  color: #909399;
-  text-align: center;
+.word-preview,
+.unsupported-preview {
   padding: 40px 0;
 }
 </style>

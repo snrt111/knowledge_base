@@ -48,3 +48,16 @@ export interface ChatMessage {
   content: string
   createTime: string
 }
+
+export interface DocumentPreview {
+  id: string
+  name: string
+  type: string
+  size: number
+  knowledgeBaseName: string
+  uploadTime: string
+  previewType: 'text' | 'pdf' | 'word' | 'unsupported'
+  content?: string
+  downloadUrl?: string
+  errorMessage?: string
+}

@@ -293,10 +293,11 @@ const handleStreamChat = (message: string) => {
     )
 
     eventSource.onmessage = (event) => {
-      if (event.data) {
+      if (event.data && messages.value[messageIndex]) {
+        const currentMsg = messages.value[messageIndex]
         messages.value[messageIndex] = {
-          ...messages.value[messageIndex],
-          content: messages.value[messageIndex].content + event.data
+          ...currentMsg,
+          content: currentMsg.content + event.data
         }
         scrollToBottom()
       }
