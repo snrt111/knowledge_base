@@ -62,6 +62,23 @@
 - HNSW 索引加速相似度搜索
 - 余弦距离计算
 
+## 系统截图
+
+### 知识库管理
+知识库列表页面，支持创建、编辑、删除知识库，以及关键词搜索功能。
+
+![知识库管理](https://gitee.com/snrt111/blog-images/raw/master/blog/20260326081054517.png)
+
+### 文档管理
+文档上传和管理页面，支持多种格式文档的上传、解析和向量化处理。
+
+![文档管理](https://gitee.com/snrt111/blog-images/raw/master/blog/20260326081344322.png)
+
+### 智能问答
+AI 智能问答界面，支持基于知识库的 RAG 问答，流式输出显示，多轮对话会话管理。
+
+![智能问答](https://gitee.com/snrt111/blog-images/raw/master/blog/20260326081503120.png)
+
 ## 项目结构
 
 ```
