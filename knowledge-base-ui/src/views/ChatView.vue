@@ -86,38 +86,12 @@
               </div>
               <div class="message-body" v-html="renderMarkdown(msg.content)"></div>
               <!-- 文档来源 -->
-              <div v-if="msg.role === 'assistant' && msg.documentSources && msg.documentSources.length > 0" class="document-sources">
-                <div class="sources-header">
-                  <el-icon><Document /></el-icon>
-                  <span>参考来源</span>
-                </div>
-                <div class="sources-list">
-                  <div
-                    v-for="(source, sIndex) in msg.documentSources"
-                    :key="sIndex"
-                    class="source-item"
-                  >
-                    <div class="source-main" @click="viewDocument(source.documentId)">
-                      <div class="source-info">
-                        <span class="source-name">{{ source.documentName }}</span>
-                        <span class="source-kb">{{ source.knowledgeBaseName }}</span>
-                      </div>
-                      <el-icon class="source-arrow"><ArrowRight /></el-icon>
-                    </div>
-                    <!-- 显示匹配的多个分块内容 -->
-                    <div v-if="source.snippets && source.snippets.length > 0" class="source-snippets">
-                      <div
-                        v-for="(snippet, snippetIndex) in source.snippets"
-                        :key="snippetIndex"
-                        class="snippet-item"
-                      >
-                        <span class="snippet-index">匹配 {{ snippetIndex + 1 }}</span>
-                        <span class="snippet-text">{{ snippet }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <DocumentSources
+                v-if="msg.role === 'assistant' && msg.documentSources && msg.documentSources.length > 0"
+                :sources="msg.documentSources"
+                :default-collapsed="true"
+                @view-document="viewDocument"
+              />
             </div>
           </div>
 
@@ -159,16 +133,64 @@
         </div>
       </div>
     </div>
+
+    <!-- 文档预览对话框 -->
+    <el-dialog
+      v-model="previewDialog.visible"
+      title="文档预览"
+      width="900px"
+      class="preview-dialog"
+      destroy-on-close
+    >
+      <div v-loading="previewDialog.loading" class="preview-content">
+        <div class="preview-header">
+          <h3>{{ previewDialog.data?.name }}</h3>
+          <div class="preview-actions">
+            <el-button type="primary" link @click="handleDownloadFromPreview">
+              <el-icon><Download /></el-icon>
+              下载
+            </el-button>
+          </div>
+        </div>
+        <div class="preview-info">
+          <el-descriptions :column="3" size="small" border>
+            <el-descriptions-item label="所属知识库">{{ previewDialog.data?.knowledgeBaseName }}</el-descriptions-item>
+            <el-descriptions-item label="文件类型">{{ previewDialog.data?.type?.toUpperCase() }}</el-descriptions-item>
+            <el-descriptions-item label="文件大小">{{ formatFileSize(previewDialog.data?.size || 0) }}</el-descriptions-item>
+            <el-descriptions-item label="上传时间">{{ previewDialog.data?.uploadTime }}</el-descriptions-item>
+            <el-descriptions-item label="预览类型">
+              <el-tag :type="getPreviewTypeTag(previewDialog.data?.previewType)">
+                {{ getPreviewTypeText(previewDialog.data?.previewType) }}
+              </el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+        <el-divider />
+        <div class="preview-body">
+          <DocumentViewer
+            v-if="previewDialog.data"
+            :preview-type="previewDialog.data.previewType"
+            :content="previewDialog.data.content"
+            :download-url="previewDialog.data.downloadUrl"
+            :file-type="previewDialog.data.type"
+            :error-message="previewDialog.data.errorMessage"
+          />
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { chatApi } from '@/api/chat'
 import { knowledgeBaseApi } from '@/api/knowledgeBase'
+import { documentApi } from '@/api/document'
 import { renderMarkdown } from '@/utils/markdown'
-import type { ChatSession, ChatMessage, KnowledgeBase } from '@/types'
+import DocumentSources from '@/components/DocumentSources.vue'
+import DocumentViewer from '@/components/DocumentViewer.vue'
+import type { ChatSession, ChatMessage, KnowledgeBase, DocumentPreview } from '@/types'
 
 const sessions = ref<ChatSession[]>([])
 const currentSession = ref<ChatSession | null>(null)
@@ -180,6 +202,14 @@ const inputMessage = ref('')
 const isLoading = ref(false)
 const isStream = ref(true)
 const messagesContainer = ref<HTMLDivElement>()
+
+// 预览对话框数据
+const previewDialog = reactive({
+  visible: false,
+  loading: false,
+  data: null as DocumentPreview | null,
+  currentDocId: ''
+})
 
 const userAvatar = 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png'
 const aiAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'
@@ -369,9 +399,69 @@ const handleStreamChat = (message: string) => {
   })
 }
 
-const viewDocument = (documentId: string) => {
-  // 跳转到文档查看页面
-  window.open(`/documents/${documentId}`, '_blank')
+// 格式化文件大小
+const formatFileSize = (bytes: number) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+// 获取预览类型标签样式
+const getPreviewTypeTag = (type?: string) => {
+  const tags: Record<string, any> = {
+    text: 'success',
+    pdf: 'warning',
+    word: 'primary',
+    excel: 'success',
+    ppt: 'danger',
+    unsupported: 'info'
+  }
+  return tags[type || ''] || 'info'
+}
+
+// 获取预览类型文本
+const getPreviewTypeText = (type?: string) => {
+  const texts: Record<string, string> = {
+    text: '文本预览',
+    pdf: 'PDF预览',
+    word: 'Word文档',
+    excel: 'Excel文档',
+    ppt: 'PPT文档',
+    unsupported: '不支持预览'
+  }
+  return texts[type || ''] || '未知'
+}
+
+// 查看文档 - 打开预览对话框
+const viewDocument = async (documentId: string) => {
+  previewDialog.currentDocId = documentId
+  previewDialog.visible = true
+  previewDialog.loading = true
+
+  try {
+    const data = await documentApi.preview(documentId)
+    previewDialog.data = data
+  } catch (error) {
+    ElMessage.error('获取文档预览失败')
+    previewDialog.data = null
+  } finally {
+    previewDialog.loading = false
+  }
+}
+
+// 从预览对话框下载文档
+const handleDownloadFromPreview = () => {
+  if (previewDialog.currentDocId) {
+    const url = documentApi.download(previewDialog.currentDocId)
+    const link = document.createElement('a')
+    link.href = url
+    link.target = '_blank'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 }
 
 onMounted(() => {
@@ -691,120 +781,6 @@ onMounted(() => {
   font-size: 0.9em;
 }
 
-/* 文档来源样式 */
-.document-sources {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background-color: #f5f7fa;
-  border-radius: 8px;
-  border-left: 3px solid #409eff;
-}
-
-.sources-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #606266;
-  margin-bottom: 8px;
-}
-
-.sources-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.source-item {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 12px;
-  background-color: #fff;
-  border-radius: 6px;
-  transition: all 0.2s;
-  border: 1px solid #e4e7ed;
-}
-
-.source-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-}
-
-.source-item:hover {
-  background-color: #ecf5ff;
-  border-color: #409eff;
-}
-
-.source-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.source-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: #303133;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.source-kb {
-  font-size: 11px;
-  color: #909399;
-}
-
-.source-arrow {
-  color: #c0c4cc;
-  font-size: 14px;
-  margin-left: 8px;
-}
-
-.source-main:hover .source-arrow {
-  color: #409eff;
-}
-
-.source-snippets {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #e4e7ed;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.snippet-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-}
-
-.snippet-index {
-  font-size: 11px;
-  font-weight: 500;
-  color: #409eff;
-}
-
-.snippet-text {
-  font-size: 12px;
-  color: #606266;
-  line-height: 1.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
 .chat-input {
   padding: 16px 20px;
   border-top: 1px solid #e4e7ed;
@@ -816,5 +792,34 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-top: 12px;
+}
+
+/* 预览对话框样式 */
+.preview-content {
+  min-height: 400px;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.preview-info {
+  margin-bottom: 16px;
+}
+
+.preview-body {
+  min-height: 300px;
+  max-height: 500px;
+  overflow: auto;
 }
 </style>

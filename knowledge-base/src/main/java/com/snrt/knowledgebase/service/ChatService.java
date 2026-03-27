@@ -332,21 +332,50 @@ public class ChatService {
      * 构建文档来源DTO列表
      */
     private List<DocumentSourceDTO> buildDocumentSources(List<Document> docs) {
-        // 按文档ID分组
-        Map<String, List<Document>> docsById = docs.stream()
-                .collect(Collectors.groupingBy(this::getDocumentId));
-        
+        // 按文档ID分组，并记录每个文档的最高相似度分数,并按相似度从高到低排序Value
+        Map<String, List<Document>> docsById = groupAndSortBySimilarity(docs);
+
         log.info("[Prompt构建] 来自 {} 个不同文件", docsById.size());
 
-        // 构建DTO并排序
+        // 构建DTO并按相似度分数排序（分数高的在前）
         List<DocumentSourceDTO> sources = docsById.entrySet().stream()
                 .map(entry -> createDocumentSource(entry.getKey(), entry.getValue()))
-                .sorted(Comparator.comparing(DocumentSourceDTO::getScore, 
-                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .sorted((s1, s2) -> {
+                    Double score1 = s1.getScore();
+                    Double score2 = s2.getScore();
+                    // 将null视为最低分数，按降序排列
+                    if (score1 == null && score2 == null) return 0;
+                    if (score1 == null) return 1;
+                    if (score2 == null) return -1;
+                    return Double.compare(score2, score1);
+                })
                 .collect(Collectors.toList());
+
+        // 记录每个来源的相似度分数
+        sources.forEach(source -> {
+            log.debug("[Prompt构建] 文档来源: {}, 相似度: {:.2f}",
+                    source.getDocumentName(), source.getScore());
+        });
 
         log.info("[Prompt构建] 提取到 {} 个文档来源", sources.size());
         return sources;
+    }
+
+    /**
+     * 按文档ID分组，并按相似度从高到低排序组内列表
+     */
+    private Map<String, List<Document>> groupAndSortBySimilarity(List<Document> docs) {
+        return docs.stream()
+                .collect(Collectors.groupingBy(
+                        this::getDocumentId,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                list -> {
+                                    list.sort(Comparator.comparingDouble(this::calculateSimilarity).reversed());
+                                    return list;
+                                }
+                        )
+                ));
     }
 
     /**
