@@ -25,13 +25,13 @@ public class DocumentProcessingService {
 
     public DocumentProcessingService(VectorStore vectorStore) {
         this.vectorStore = vectorStore;
-        this.textSplitter = new TokenTextSplitter(
-                Constants.VectorStore.CHUNK_SIZE,
-                Constants.VectorStore.CHUNK_OVERLAP,
-                Constants.VectorStore.CHUNK_SIZE,
-                Constants.VectorStore.CHUNK_OVERLAP,
-                true
-        );
+        this.textSplitter = TokenTextSplitter.builder()
+                .withChunkSize(Constants.VectorStore.CHUNK_SIZE)
+                .withMinChunkSizeChars(100)
+                .withMinChunkLengthToEmbed(100)
+                .withMaxNumChunks(1000)
+                .withKeepSeparator(true)
+                .build();
     }
 
     public void processAndIndexDocument(Path filePath, String documentId, String documentName,
@@ -88,10 +88,28 @@ public class DocumentProcessingService {
     }
     
     private List<Document> readWithTika(Path filePath) {
+        log.info("开始使用 Tika 读取文件: {}", filePath);
+        
         TikaDocumentReader reader = new TikaDocumentReader(new FileSystemResource(filePath.toFile()));
         List<Document> documents = reader.get();
         
+        if (documents == null || documents.isEmpty()) {
+            log.warn("Tika 未能从文件中提取到任何内容: {}", filePath);
+            return new ArrayList<>();
+        }
+        
+        log.info("Tika 读取完成，原始文档数: {}, 第一个文档内容长度: {}", 
+                documents.size(),
+                documents.get(0).getText() != null ? documents.get(0).getText().length() : 0);
+        
         List<Document> splitDocuments = textSplitter.apply(documents);
+        
+        if (splitDocuments == null || splitDocuments.isEmpty()) {
+            log.warn("TextSplitter 分块后结果为空，使用原始文档: {}", filePath);
+            splitDocuments = documents;
+        }
+        
+        log.info("文档分块完成，分块数: {}", splitDocuments.size());
         
         for (Document doc : splitDocuments) {
             doc.getMetadata().put(Constants.VectorStore.METADATA_FILE_PATH, filePath.toString());
