@@ -16,9 +16,11 @@
 | Spring Boot | 3.2.0 | 应用框架 |
 | Spring AI | 1.1.2 | AI 开发框架 |
 | Spring Data JPA | - | 数据持久层 |
-| PostgreSQL | - | 关系型数据库 |
+| PostgreSQL | 14+ | 关系型数据库 |
 | pgvector | latest | 向量扩展插件 |
+| MinIO | latest | 对象存储 |
 | Lombok | - | 代码简化工具 |
+| MapStruct | 1.5.5 | 对象映射工具 |
 | SpringDoc OpenAPI | 2.3.0 | API 文档 |
 
 ### 前端技术栈 (knowledge-base-ui/)
@@ -33,6 +35,7 @@
 | Axios | 1.13.6 | HTTP 客户端 |
 | Marked | 17.0.5 | Markdown 解析 |
 | Highlight.js | 11.11.1 | 代码高亮 |
+| @js-preview/* | 1.0.3 | 文档预览组件 |
 
 ### AI 模型支持
 
@@ -49,18 +52,22 @@
 ### 文档管理
 - 支持多种文档格式上传（PDF、Word、TXT、Markdown 等）
 - 文档自动解析和向量化
+- 文档在线预览（PDF、Word、Excel、PPT）
 - 文档与知识库关联管理
+- MinIO 对象存储支持
 
 ### 智能问答
 - 基于知识库的 RAG 问答
 - 支持流式输出 (SSE)
 - 多轮对话会话管理
 - 历史消息记录
+- 引用来源展示
 
 ### 向量检索
 - 基于 pgvector 的向量存储
 - HNSW 索引加速相似度搜索
 - 余弦距离计算
+- 支持 768 维向量
 
 ## 系统截图
 
@@ -77,7 +84,8 @@
 ### 智能问答
 AI 智能问答界面，支持基于知识库的 RAG 问答，流式输出显示，多轮对话会话管理。
 
-![智能问答](https://gitee.com/snrt111/blog-images/raw/master/blog/20260326081503120.png)
+
+![智能问答](https://gitee.com/snrt111/blog-images/raw/master/blog/20260327120745122.png)
 
 ## 项目结构
 
@@ -86,19 +94,27 @@ knowledge-base/
 ├── knowledge-base/                 # 后端项目
 │   ├── src/main/java/com/snrt/knowledgebase/
 │   │   ├── config/                 # 配置类
+│   │   ├── constants/              # 常量定义
 │   │   ├── controller/             # 控制器层
 │   │   ├── dto/                    # 数据传输对象
 │   │   ├── entity/                 # 实体类
+│   │   ├── enums/                  # 枚举类
+│   │   ├── event/                  # 事件定义
 │   │   ├── exception/              # 异常处理
+│   │   ├── listener/               # 事件监听器
+│   │   ├── mapper/                 # 对象映射
+│   │   ├── model/                  # AI 模型提供者
 │   │   ├── repository/             # 数据访问层
-│   │   └── service/                # 业务逻辑层
+│   │   ├── service/                # 业务逻辑层
+│   │   └── util/                   # 工具类
 │   ├── src/main/resources/
 │   │   ├── application.yaml        # 主配置文件
 │   │   ├── application-dev.yaml    # 开发环境配置
 │   │   └── application-prod.yaml   # 生产环境配置
 │   ├── docker/
 │   │   └── pgvector/
-│   │       └── init.sql            # 数据库初始化脚本
+│   │       ├── init.sql            # 数据库初始化脚本
+│   │       └── migration/          # 数据库迁移脚本
 │   ├── uploads/documents/          # 文档上传目录
 │   ├── docker-compose.yml          # Docker Compose 配置
 │   └── pom.xml                     # Maven 配置
@@ -106,6 +122,7 @@ knowledge-base/
 └── knowledge-base-ui/              # 前端项目
     ├── src/
     │   ├── api/                    # API 接口
+    │   ├── components/             # 公共组件
     │   ├── layouts/                # 布局组件
     │   ├── router/                 # 路由配置
     │   ├── types/                  # TypeScript 类型
@@ -129,25 +146,31 @@ knowledge-base/
 
 ### 方式一：Docker 部署（推荐）
 
-1. 启动数据库服务
+1. **启动基础设施服务**（PostgreSQL + MinIO）
 ```bash
 cd knowledge-base
 docker-compose up -d
 ```
 
-2. 启动后端服务
+2. **启动后端服务**
 ```bash
 ./mvnw spring-boot:run
 # 或
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-3. 启动前端服务
+3. **启动前端服务**
 ```bash
 cd knowledge-base-ui
 npm install
 npm run dev
 ```
+
+访问地址：
+- 前端页面：http://localhost:5173
+- 后端 API：http://localhost:8080
+- API 文档：http://localhost:8080/swagger-ui.html
+- MinIO 控制台：http://localhost:9001
 
 ### 方式二：本地部署
 
@@ -163,7 +186,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 #### 2. 后端配置
 
-编辑 `knowledge-base/src/main/resources/application.yaml`：
+编辑 `knowledge-base/src/main/resources/application-dev.yaml`：
 
 ```yaml
 spring:
@@ -182,7 +205,7 @@ spring:
 ```bash
 cd knowledge-base
 mvn clean install
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
 #### 3. 前端配置
@@ -199,7 +222,7 @@ npm run dev
 
 ### AI 模型配置
 
-系统支持两种 AI 模型配置方式，可在 `application.yaml` 中切换：
+系统支持两种 AI 模型配置方式，可在 `application-dev.yaml` 或 `application-prod.yaml` 中切换：
 
 #### 智谱 AI 配置
 ```yaml
@@ -211,6 +234,10 @@ spring:
         options:
           model: glm-4.7-flash
           temperature: 0.7
+
+chat:
+  model:
+    provider: zhipuai
 ```
 
 #### Ollama 本地模型配置
@@ -226,6 +253,10 @@ spring:
       embedding:
         options:
           model: nomic-embed-text
+
+chat:
+  model:
+    provider: ollama
 ```
 
 ### 向量存储配置
@@ -235,11 +266,22 @@ spring:
   ai:
     vectorstore:
       pgvector:
-        initialize-schema: true        # 自动创建表
+        initialize-schema: true        # 自动创建表（生产环境建议关闭）
         table-name: vector_store       # 向量表名
         index-type: HNSW              # 索引类型
         distance-type: COSINE_DISTANCE # 距离计算方式
         dimensions: 768               # 向量维度
+        max-document-batch-size: 10000 # 批量处理大小
+```
+
+### MinIO 对象存储配置
+
+```yaml
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin123
+  bucket-name: knowledge-base
 ```
 
 ## API 文档
@@ -261,11 +303,13 @@ http://localhost:8080/swagger-ui.html
 ### 文档管理
 - `GET /api/documents` - 获取文档列表
 - `POST /api/documents/upload` - 上传文档
+- `GET /api/documents/{id}/preview` - 预览文档
 - `DELETE /api/documents/{id}` - 删除文档
 
 ### 智能问答
 - `GET /api/chat/sessions` - 获取会话列表
 - `POST /api/chat/sessions` - 创建会话
+- `DELETE /api/chat/sessions/{id}` - 删除会话
 - `POST /api/chat` - 发送消息（非流式）
 - `GET /api/chat/stream` - 流式对话（SSE）
 
@@ -285,15 +329,37 @@ http://localhost:8080/swagger-ui.html
 
 ## 生产部署
 
-### 后端打包
+### 环境变量配置
+
+生产环境建议使用环境变量配置敏感信息：
+
+```bash
+# 数据库配置
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=knowledge_base
+export DB_USERNAME=postgres
+export DB_PASSWORD=your_password
+
+# AI 模型配置
+export ZHIPUAI_API_KEY=your_api_key
+export CHAT_MODEL_PROVIDER=zhipuai
+
+# MinIO 配置
+export MINIO_ENDPOINT=http://localhost:9000
+export MINIO_ACCESS_KEY=minioadmin
+export MINIO_SECRET_KEY=minioadmin123
+```
+
+### 后端打包部署
 
 ```bash
 cd knowledge-base
 mvn clean package -P prod
-java -jar target/knowledge-base-0.0.1-SNAPSHOT.jar
+java -jar target/knowledge-base-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
 ```
 
-### 前端打包
+### 前端打包部署
 
 ```bash
 cd knowledge-base-ui
@@ -301,6 +367,27 @@ npm run build
 ```
 
 打包后的文件位于 `dist/` 目录，可部署到 Nginx 等 Web 服务器。
+
+#### Nginx 配置示例
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+    root /path/to/knowledge-base-ui/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
 
 ## 常见问题
 
@@ -315,11 +402,26 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 - 检查 API Key 是否正确配置
 - 确认网络可以访问智谱 AI 服务
-- 如使用 Ollama，确保服务已启动
+- 如使用 Ollama，确保服务已启动并模型已下载
+- 检查 `chat.model.provider` 配置是否正确
 
 ### 3. 文档解析失败
 
-确保上传的文档格式受支持，且文件未损坏。
+- 确保上传的文档格式受支持（PDF、Word、TXT、Markdown）
+- 检查文件是否损坏
+- 确认 Tika 文档解析器依赖已正确引入
+
+### 4. MinIO 连接失败
+
+- 检查 MinIO 服务是否已启动
+- 确认 endpoint、access-key、secret-key 配置正确
+- 检查 bucket 是否已创建
+
+### 5. 向量检索无结果
+
+- 确认文档已成功解析并生成向量
+- 检查向量维度配置是否匹配（默认 768 维）
+- 验证 pgvector 扩展是否正确安装
 
 ## 技术亮点
 
@@ -328,6 +430,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 - 支持多种 AI 模型灵活切换
 - 前后端分离，接口 RESTful 设计
 - 支持流式输出，提升用户体验
+- 文档在线预览功能
+- 对象存储支持大文件管理
 
 ## 许可证
 

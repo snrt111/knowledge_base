@@ -157,7 +157,7 @@
             <el-descriptions-item label="所属知识库">{{ previewDialog.data?.knowledgeBaseName }}</el-descriptions-item>
             <el-descriptions-item label="文件类型">{{ previewDialog.data?.type?.toUpperCase() }}</el-descriptions-item>
             <el-descriptions-item label="文件大小">{{ formatFileSize(previewDialog.data?.size || 0) }}</el-descriptions-item>
-            <el-descriptions-item label="上传时间">{{ previewDialog.data?.uploadTime }}</el-descriptions-item>
+            <el-descriptions-item label="上传时间">{{ formatDateTime(previewDialog.data?.uploadTime) }}</el-descriptions-item>
             <el-descriptions-item label="预览类型">
               <el-tag :type="getPreviewTypeTag(previewDialog.data?.previewType)">
                 {{ getPreviewTypeText(previewDialog.data?.previewType) }}
@@ -191,6 +191,7 @@ import { renderMarkdown } from '@/utils/markdown'
 import DocumentSources from '@/components/DocumentSources.vue'
 import DocumentViewer from '@/components/DocumentViewer.vue'
 import type { ChatSession, ChatMessage, KnowledgeBase, DocumentPreview } from '@/types'
+import { formatDateTime } from '@/utils/date'
 
 const sessions = ref<ChatSession[]>([])
 const currentSession = ref<ChatSession | null>(null)

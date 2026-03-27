@@ -69,7 +69,11 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="uploadTime" label="上传时间" width="180" />
+        <el-table-column prop="uploadTime" label="上传时间" width="180">
+          <template #default="{ row }">
+            {{ formatDateTime(row.uploadTime) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="handlePreview(row)">
@@ -171,7 +175,7 @@
             <el-descriptions-item label="所属知识库">{{ previewDialog.data?.knowledgeBaseName }}</el-descriptions-item>
             <el-descriptions-item label="文件类型">{{ previewDialog.data?.type.toUpperCase() }}</el-descriptions-item>
             <el-descriptions-item label="文件大小">{{ formatFileSize(previewDialog.data?.size || 0) }}</el-descriptions-item>
-            <el-descriptions-item label="上传时间">{{ previewDialog.data?.uploadTime }}</el-descriptions-item>
+            <el-descriptions-item label="上传时间">{{ formatDateTime(previewDialog.data?.uploadTime) }}</el-descriptions-item>
             <el-descriptions-item label="预览类型">
               <el-tag :type="getPreviewTypeTag(previewDialog.data?.previewType)">
                 {{ getPreviewTypeText(previewDialog.data?.previewType) }}
@@ -205,6 +209,7 @@ import { documentApi } from '@/api/document'
 import { knowledgeBaseApi } from '@/api/knowledgeBase'
 import DocumentViewer from '@/components/DocumentViewer.vue'
 import type { Document, DocumentPreview, KnowledgeBase } from '@/types'
+import { formatDateTime } from '@/utils/date'
 
 const route = useRoute()
 const loading = ref(false)
