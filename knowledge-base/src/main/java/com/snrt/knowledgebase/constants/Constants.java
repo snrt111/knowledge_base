@@ -54,7 +54,9 @@ public final class Constants {
         public static final int CHUNK_SIZE = 1000;
         public static final int CHUNK_OVERLAP = 200;
         public static final String METADATA_DOCUMENT_ID = "documentId";
+        public static final String METADATA_DOCUMENT_NAME = "documentName";
         public static final String METADATA_KNOWLEDGE_BASE_ID = "knowledgeBaseId";
+        public static final String METADATA_KNOWLEDGE_BASE_NAME = "knowledgeBaseName";
         public static final String METADATA_CHUNK_ID = "chunkId";
         public static final String METADATA_FILE_PATH = "filePath";
     }

@@ -85,6 +85,39 @@
                 <span class="time">{{ formatTime(msg.createTime) }}</span>
               </div>
               <div class="message-body" v-html="renderMarkdown(msg.content)"></div>
+              <!-- 文档来源 -->
+              <div v-if="msg.role === 'assistant' && msg.documentSources && msg.documentSources.length > 0" class="document-sources">
+                <div class="sources-header">
+                  <el-icon><Document /></el-icon>
+                  <span>参考来源</span>
+                </div>
+                <div class="sources-list">
+                  <div
+                    v-for="(source, sIndex) in msg.documentSources"
+                    :key="sIndex"
+                    class="source-item"
+                  >
+                    <div class="source-main" @click="viewDocument(source.documentId)">
+                      <div class="source-info">
+                        <span class="source-name">{{ source.documentName }}</span>
+                        <span class="source-kb">{{ source.knowledgeBaseName }}</span>
+                      </div>
+                      <el-icon class="source-arrow"><ArrowRight /></el-icon>
+                    </div>
+                    <!-- 显示匹配的多个分块内容 -->
+                    <div v-if="source.snippets && source.snippets.length > 0" class="source-snippets">
+                      <div
+                        v-for="(snippet, snippetIndex) in source.snippets"
+                        :key="snippetIndex"
+                        class="snippet-item"
+                      >
+                        <span class="snippet-index">匹配 {{ snippetIndex + 1 }}</span>
+                        <span class="snippet-text">{{ snippet }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -270,8 +303,9 @@ const handleNormalChat = async (message: string) => {
   messages.value.push({
     id: Date.now().toString(),
     role: 'assistant',
-    content: response,
-    createTime: new Date().toISOString()
+    content: response.content,
+    createTime: new Date().toISOString(),
+    documentSources: response.sources || []
   })
 }
 
@@ -281,7 +315,8 @@ const handleStreamChat = (message: string) => {
       id: Date.now().toString(),
       role: 'assistant',
       content: '',
-      createTime: new Date().toISOString()
+      createTime: new Date().toISOString(),
+      documentSources: []
     }
     messages.value.push(assistantMessage)
     const messageIndex = messages.value.length - 1
@@ -294,10 +329,30 @@ const handleStreamChat = (message: string) => {
 
     eventSource.onmessage = (event) => {
       if (event.data && messages.value[messageIndex]) {
-        const currentMsg = messages.value[messageIndex]
-        messages.value[messageIndex] = {
-          ...currentMsg,
-          content: currentMsg.content + event.data
+        try {
+          const response = JSON.parse(event.data)
+          const currentMsg = messages.value[messageIndex]
+
+          if (response.type === 'content' && response.content) {
+            messages.value[messageIndex] = {
+              ...currentMsg,
+              content: currentMsg.content + response.content
+            }
+          } else if (response.type === 'sources' && response.sources) {
+            messages.value[messageIndex] = {
+              ...currentMsg,
+              documentSources: response.sources
+            }
+          } else if (response.type === 'complete') {
+            // 完成标记，不做处理
+          }
+        } catch (e) {
+          // 兼容旧格式，直接追加内容
+          const currentMsg = messages.value[messageIndex]
+          messages.value[messageIndex] = {
+            ...currentMsg,
+            content: currentMsg.content + event.data
+          }
         }
         scrollToBottom()
       }
@@ -312,6 +367,11 @@ const handleStreamChat = (message: string) => {
       isLoading.value = false
     }
   })
+}
+
+const viewDocument = (documentId: string) => {
+  // 跳转到文档查看页面
+  window.open(`/documents/${documentId}`, '_blank')
 }
 
 onMounted(() => {
@@ -629,6 +689,120 @@ onMounted(() => {
   border-radius: 4px;
   color: #e83e8c;
   font-size: 0.9em;
+}
+
+/* 文档来源样式 */
+.document-sources {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background-color: #f5f7fa;
+  border-radius: 8px;
+  border-left: 3px solid #409eff;
+}
+
+.sources-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.source-item {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  background-color: #fff;
+  border-radius: 6px;
+  transition: all 0.2s;
+  border: 1px solid #e4e7ed;
+}
+
+.source-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.source-item:hover {
+  background-color: #ecf5ff;
+  border-color: #409eff;
+}
+
+.source-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.source-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-kb {
+  font-size: 11px;
+  color: #909399;
+}
+
+.source-arrow {
+  color: #c0c4cc;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+.source-main:hover .source-arrow {
+  color: #409eff;
+}
+
+.source-snippets {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.snippet-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.snippet-index {
+  font-size: 11px;
+  font-weight: 500;
+  color: #409eff;
+}
+
+.snippet-text {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .chat-input {

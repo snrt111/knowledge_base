@@ -1,10 +1,8 @@
 package com.snrt.knowledgebase.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.snrt.knowledgebase.constants.Constants;
-import com.snrt.knowledgebase.dto.ChatMessageDTO;
-import com.snrt.knowledgebase.dto.ChatRequest;
-import com.snrt.knowledgebase.dto.ChatSessionDTO;
-import com.snrt.knowledgebase.dto.PageResult;
+import com.snrt.knowledgebase.dto.*;
 import com.snrt.knowledgebase.entity.ChatMessage;
 import com.snrt.knowledgebase.entity.ChatSession;
 import com.snrt.knowledgebase.entity.KnowledgeBase;
@@ -16,6 +14,7 @@ import com.snrt.knowledgebase.repository.ChatMessageRepository;
 import com.snrt.knowledgebase.repository.ChatSessionRepository;
 import com.snrt.knowledgebase.repository.KnowledgeBaseRepository;
 import com.snrt.knowledgebase.util.LogUtils;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -33,6 +32,7 @@ import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -49,6 +49,22 @@ public class ChatService {
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * Prompt构建结果
+     * 包含构建好的prompt字符串和引用的文档来源信息
+     */
+    @Getter
+    private static class PromptResult {
+        private final String prompt;
+        private final List<DocumentSourceDTO> documentSources;
+
+        PromptResult(String prompt, List<DocumentSourceDTO> documentSources) {
+            this.prompt = prompt;
+            this.documentSources = documentSources;
+        }
+    }
 
     @Transactional(readOnly = true)
     public PageResult<ChatSessionDTO> listSessions(Integer page, Integer size, String keyword) {
@@ -109,7 +125,7 @@ public class ChatService {
     }
 
     @Transactional
-    public String chat(ChatRequest request) {
+    public ChatResponseDTO chat(ChatRequest request) {
         Instant start = Instant.now();
         String traceId = LogUtils.getTraceId();
 
@@ -117,15 +133,15 @@ public class ChatService {
         log.info("[{}] [大模型请求] 会话ID: {}, 知识库ID: {}, 用户消息: {}",
                 traceId, session.getId(), request.getKnowledgeBaseId(), request.getMessage());
 
-        saveMessage(session.getId(), ChatMessage.MessageRole.USER, request.getMessage());
+        saveMessage(session.getId(), ChatMessage.MessageRole.USER, request.getMessage(), null);
 
         String knowledgeBaseId = session.getKnowledgeBase() != null ? session.getKnowledgeBase().getId() : null;
-        String prompt = buildPrompt(request.getMessage(), knowledgeBaseId);
+        PromptResult promptResult = buildPromptWithSources(request.getMessage(), knowledgeBaseId);
         log.debug("[{}] [大模型处理] 会话ID: {}, 构建的Prompt长度: {} 字符",
-                traceId, session.getId(), prompt.length());
+                traceId, session.getId(), promptResult.getPrompt().length());
 
         ChatModel chatModel = chatModelFactory.getDefaultModel();
-        String response = chatModel.call(prompt);
+        String response = chatModel.call(promptResult.getPrompt());
 
         Duration duration = Duration.between(start, Instant.now());
         LogUtils.logPerformance("chat", duration, 5000);
@@ -133,13 +149,17 @@ public class ChatService {
         log.info("[{}] [大模型回答] 会话ID: {}, 响应耗时: {}ms, 回答长度: {} 字符",
                 traceId, session.getId(), duration.toMillis(), response.length());
 
-        saveMessage(session.getId(), ChatMessage.MessageRole.ASSISTANT, response);
+        String documentSourcesJson = convertDocumentSourcesToJson(promptResult.getDocumentSources());
+        saveMessage(session.getId(), ChatMessage.MessageRole.ASSISTANT, response, documentSourcesJson);
 
-        return response;
+        return ChatResponseDTO.builder()
+                .content(response)
+                .sources(promptResult.getDocumentSources())
+                .build();
     }
 
     @Transactional
-    public Flux<String> streamChat(ChatRequest request) {
+    public Flux<StreamChatResponse> streamChat(ChatRequest request) {
         Instant start = Instant.now();
         String traceId = LogUtils.getTraceId();
 
@@ -147,29 +167,38 @@ public class ChatService {
         log.info("[{}] [大模型流式请求] 会话ID: {}, 知识库ID: {}, 用户消息: {}",
                 traceId, session.getId(), request.getKnowledgeBaseId(), request.getMessage());
 
-        saveMessage(session.getId(), ChatMessage.MessageRole.USER, request.getMessage());
+        saveMessage(session.getId(), ChatMessage.MessageRole.USER, request.getMessage(), null);
 
         String knowledgeBaseId = session.getKnowledgeBase() != null ? session.getKnowledgeBase().getId() : null;
-        String prompt = buildPrompt(request.getMessage(), knowledgeBaseId);
+        PromptResult promptResult = buildPromptWithSources(request.getMessage(), knowledgeBaseId);
         log.debug("[{}] [大模型流式处理] 会话ID: {}, 构建的Prompt长度: {} 字符",
-                traceId, session.getId(), prompt.length());
+                traceId, session.getId(), promptResult.getPrompt().length());
 
         ChatModel chatModel = chatModelFactory.getDefaultModel();
         StringBuilder fullResponse = new StringBuilder();
 
-        return chatModel.stream(prompt)
-                .doOnNext(chunk -> {
-                    fullResponse.append(chunk);
-                    log.debug("[{}] [大模型流式响应] 会话ID: {}, 接收数据块长度: {}",
-                            traceId, session.getId(), chunk.length());
+        // 先发送文档来源信息
+        StreamChatResponse sourcesResponse = StreamChatResponse.sources(promptResult.getDocumentSources());
+
+        return chatModel.stream(promptResult.getPrompt())
+                .map(StreamChatResponse::content)
+                .doOnNext(response -> {
+                    if (response.getContent() != null) {
+                        fullResponse.append(response.getContent());
+                        log.debug("[{}] [大模型流式响应] 会话ID: {}, 接收数据块长度: {}",
+                                traceId, session.getId(), response.getContent().length());
+                    }
                 })
+                .startWith(sourcesResponse)
+                .concatWithValues(StreamChatResponse.complete())
                 .doOnComplete(() -> {
                     Duration duration = Duration.between(start, Instant.now());
                     LogUtils.logPerformance("streamChat", duration, 10000);
 
                     log.info("[{}] [大模型流式回答完成] 会话ID: {}, 响应耗时: {}ms, 完整回答长度: {} 字符",
                             traceId, session.getId(), duration.toMillis(), fullResponse.length());
-                    saveMessage(session.getId(), ChatMessage.MessageRole.ASSISTANT, fullResponse.toString());
+                    String documentSourcesJson = convertDocumentSourcesToJson(promptResult.getDocumentSources());
+                    saveMessage(session.getId(), ChatMessage.MessageRole.ASSISTANT, fullResponse.toString(), documentSourcesJson);
                 })
                 .doOnError(error -> {
                     Duration duration = Duration.between(start, Instant.now());
@@ -204,16 +233,24 @@ public class ChatService {
         return sessionRepository.save(session);
     }
 
-    private String buildPrompt(String message, String knowledgeBaseId) {
+    /**
+     * 构建Prompt并提取文档来源信息
+     *
+     * @param message 用户消息
+     * @param knowledgeBaseId 知识库ID
+     * @return PromptResult 包含prompt字符串和文档来源信息
+     */
+    private PromptResult buildPromptWithSources(String message, String knowledgeBaseId) {
         if (knowledgeBaseId == null) {
             log.debug("[Prompt构建] 未指定知识库，直接返回用户消息");
-            return message;
+            return new PromptResult(message, null);
         }
 
         log.info("[Prompt构建] 知识库ID: {}, 开始检索相关文档", knowledgeBaseId);
 
         List<Document> relevantDocs = vectorStore.similaritySearch(message);
         log.debug("[Prompt构建] 检索到 {} 个相关文档", relevantDocs.size());
+        relevantDocs.forEach(doc -> log.debug("[Prompt构建] 文档: {}", doc));
 
         List<Document> filteredDocs = relevantDocs.stream()
                 .filter(doc -> {
@@ -224,6 +261,52 @@ public class ChatService {
                 .collect(Collectors.toList());
 
         log.info("[Prompt构建] 知识库ID: {}, 过滤后剩余 {} 个文档", knowledgeBaseId, filteredDocs.size());
+
+        // 按文档ID分组，合并相同文档的多个分块
+        Map<String, List<Document>> docsByDocumentId = filteredDocs.stream()
+                .collect(Collectors.groupingBy(doc -> {
+                    Object docId = doc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_ID);
+                    return docId != null ? docId.toString() : "unknown";
+                }));
+
+        log.info("[Prompt构建] 检索到 {} 个文档，来自 {} 个不同文件", filteredDocs.size(), docsByDocumentId.size());
+
+        // 提取文档来源信息，合并相同文档的分块
+        List<DocumentSourceDTO> documentSources = docsByDocumentId.entrySet().stream()
+                .map(entry -> {
+                    String docId = entry.getKey();
+                    List<Document> docChunks = entry.getValue();
+                    Document firstDoc = docChunks.get(0);
+
+                    Object docName = firstDoc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_NAME);
+                    Object kbName = firstDoc.getMetadata().get(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_NAME);
+
+                    // 收集所有分块的片段内容
+                    List<String> snippets = docChunks.stream()
+                            .map(doc -> {
+                                String text = doc.getText();
+                                return text.length() > 200 ? text.substring(0, 200) + "..." : text;
+                            })
+                            .collect(Collectors.toList());
+
+                    log.debug("[Prompt构建] 文档: documentId={}, documentName={}, 匹配分块数={}",
+                            docId, docName, docChunks.size());
+
+                    return DocumentSourceDTO.builder()
+                            .documentId(docId.equals("unknown") ? null : docId)
+                            .documentName(docName != null ? docName.toString() : "未知文档")
+                            .knowledgeBaseName(kbName != null ? kbName.toString() : "未知知识库")
+                            .snippet(snippets.isEmpty() ? "" : snippets.get(0))
+                            .snippets(snippets)
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        log.info("[Prompt构建] 提取到 {} 个文档来源", documentSources.size());
+        documentSources.forEach(source ->
+                log.debug("[Prompt构建] 文档来源: documentName={}, knowledgeBaseName={}, 分块数={}",
+                        source.getDocumentName(), source.getKnowledgeBaseName(),
+                        source.getSnippets() != null ? source.getSnippets().size() : 0));
 
         String context = filteredDocs.stream()
                 .map(Document::getText)
@@ -244,10 +327,25 @@ public class ChatService {
 
         log.debug("[Prompt构建] 最终Prompt长度: {} 字符", prompt.getContents().length());
 
-        return prompt.getContents();
+        return new PromptResult(prompt.getContents(), documentSources);
     }
 
-    private void saveMessage(String sessionId, ChatMessage.MessageRole role, String content) {
+    /**
+     * 将文档来源列表转换为JSON字符串
+     */
+    private String convertDocumentSourcesToJson(List<DocumentSourceDTO> documentSources) {
+        if (documentSources == null || documentSources.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(documentSources);
+        } catch (Exception e) {
+            log.warn("转换文档来源为JSON失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void saveMessage(String sessionId, ChatMessage.MessageRole role, String content, String documentSources) {
         ChatSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("会话", sessionId));
 
@@ -255,6 +353,7 @@ public class ChatService {
         message.setSession(session);
         message.setRole(role);
         message.setContent(content);
+        message.setDocumentSources(documentSources);
         messageRepository.save(message);
     }
 

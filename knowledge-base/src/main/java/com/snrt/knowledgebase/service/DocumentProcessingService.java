@@ -34,14 +34,17 @@ public class DocumentProcessingService {
         );
     }
 
-    public void processAndIndexDocument(Path filePath, String documentId, String knowledgeBaseId) {
+    public void processAndIndexDocument(Path filePath, String documentId, String documentName,
+                                        String knowledgeBaseId, String knowledgeBaseName) {
         try {
             List<Document> documents = readDocument(filePath);
 
             List<Document> documentsWithMetadata = new ArrayList<>();
             for (Document doc : documents) {
                 doc.getMetadata().put(Constants.VectorStore.METADATA_DOCUMENT_ID, documentId);
+                doc.getMetadata().put(Constants.VectorStore.METADATA_DOCUMENT_NAME, documentName);
                 doc.getMetadata().put(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_ID, knowledgeBaseId);
+                doc.getMetadata().put(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_NAME, knowledgeBaseName);
                 doc.getMetadata().put(Constants.VectorStore.METADATA_CHUNK_ID, UUID.randomUUID().toString());
                 documentsWithMetadata.add(doc);
             }

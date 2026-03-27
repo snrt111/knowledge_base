@@ -17,6 +17,7 @@ public interface DocumentMapper {
     @Mapping(source = "knowledgeBase.id", target = "knowledgeBaseId")
     @Mapping(source = "knowledgeBase.name", target = "knowledgeBaseName")
     @Mapping(source = "status", target = "status", qualifiedByName = "statusToString")
+    @Mapping(source = "createTime", target = "uploadTime")
     DocumentDTO toDTO(Document entity);
 
     List<DocumentDTO> toDTOList(List<Document> entities);
@@ -27,6 +28,8 @@ public interface DocumentMapper {
     @Mapping(target = "isDeleted", ignore = true)
     @Mapping(target = "knowledgeBase", ignore = true)
     @Mapping(target = "status", ignore = true)
+    @Mapping(target = "filePath", ignore = true)
+    @Mapping(target = "objectName", ignore = true)
     Document toEntity(DocumentDTO dto);
 
     @Named("statusToString")

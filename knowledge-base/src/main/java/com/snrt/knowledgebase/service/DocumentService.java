@@ -307,7 +307,10 @@ public class DocumentService {
 
                 eventPublisher.publishStatusChanged(this, document, Document.DocumentStatus.PROCESSING);
 
-                documentProcessingService.processAndIndexDocument(filePath, document.getId(), knowledgeBaseId);
+                String knowledgeBaseName = document.getKnowledgeBase().getName();
+                documentProcessingService.processAndIndexDocument(
+                        filePath, document.getId(), document.getName(),
+                        knowledgeBaseId, knowledgeBaseName);
 
                 Document.DocumentStatus oldStatus = document.getStatus();
                 document.setStatus(Document.DocumentStatus.COMPLETED);

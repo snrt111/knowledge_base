@@ -8,11 +8,21 @@ export interface ChatSession {
   updateTime: string
 }
 
+export interface DocumentSource {
+  documentId: string
+  documentName: string
+  knowledgeBaseName: string
+  score?: number
+  snippet?: string
+  snippets?: string[]
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   createTime: string
+  documentSources?: DocumentSource[]
 }
 
 export interface ChatRequest {
@@ -20,4 +30,9 @@ export interface ChatRequest {
   sessionId?: string
   knowledgeBaseId?: string
   stream?: boolean
+}
+
+export interface ChatResponse {
+  content: string
+  sources?: DocumentSource[]
 }

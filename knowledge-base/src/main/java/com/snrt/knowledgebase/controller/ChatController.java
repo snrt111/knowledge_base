@@ -1,8 +1,11 @@
 package com.snrt.knowledgebase.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.snrt.knowledgebase.dto.*;
 import com.snrt.knowledgebase.service.ChatService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
@@ -10,12 +13,14 @@ import reactor.core.publisher.Flux;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/chat")
 @RequiredArgsConstructor
 public class ChatController {
 
     private final ChatService chatService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @GetMapping("/sessions")
     public ApiResponse<PageResult<ChatSessionDTO>> listSessions(
@@ -49,7 +54,7 @@ public class ChatController {
     }
 
     @PostMapping
-    public ApiResponse<String> chat(@RequestBody ChatRequest request) {
+    public ApiResponse<ChatResponseDTO> chat(@RequestBody ChatRequest request) {
         return ApiResponse.success(chatService.chat(request));
     }
 
@@ -62,6 +67,15 @@ public class ChatController {
         request.setMessage(message);
         request.setSessionId(sessionId);
         request.setKnowledgeBaseId(knowledgeBaseId);
-        return chatService.streamChat(request);
+
+        return chatService.streamChat(request)
+                .map(response -> {
+                    try {
+                        return objectMapper.writeValueAsString(response);
+                    } catch (JsonProcessingException e) {
+                        log.error("序列化流式响应失败", e);
+                        return "{\"type\":\"error\",\"content\":\"序列化失败\"}";
+                    }
+                });
     }
 }

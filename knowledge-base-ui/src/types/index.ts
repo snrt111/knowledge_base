@@ -42,11 +42,26 @@ export interface ChatSession {
   updateTime: string
 }
 
+export interface DocumentSource {
+  documentId: string
+  documentName: string
+  knowledgeBaseName: string
+  score?: number
+  snippet?: string
+  snippets?: string[]
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   createTime: string
+  documentSources?: DocumentSource[]
+}
+
+export interface ChatResponse {
+  content: string
+  sources?: DocumentSource[]
 }
 
 export interface DocumentPreview {

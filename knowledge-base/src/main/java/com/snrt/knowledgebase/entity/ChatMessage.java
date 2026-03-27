@@ -30,6 +30,12 @@ public class ChatMessage {
     @Column(name = "create_time", updatable = false)
     private LocalDateTime createTime;
 
+    /**
+     * AI回答引用的文档来源信息，以JSON格式存储
+     */
+    @Column(name = "document_sources", columnDefinition = "TEXT")
+    private String documentSources;
+
     public enum MessageRole {
         USER, ASSISTANT, SYSTEM
     }

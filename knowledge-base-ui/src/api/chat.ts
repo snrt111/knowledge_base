@@ -1,10 +1,10 @@
 import axios from 'axios'
-import type { ChatSession, ChatMessage, PageResult } from '@/types'
+import type { ChatSession, ChatMessage, PageResult, ChatResponse } from '@/types'
 
 const API_BASE = '/api/chat'
 
 export const chatApi = {
-  sendMessage(message: string, sessionId?: string, knowledgeBaseId?: string): Promise<string> {
+  sendMessage(message: string, sessionId?: string, knowledgeBaseId?: string): Promise<ChatResponse> {
     return axios.post(API_BASE, {
       message,
       sessionId,
