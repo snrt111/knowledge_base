@@ -21,6 +21,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +34,7 @@ import reactor.core.publisher.Flux;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -248,67 +250,162 @@ public class ChatService {
 
         log.info("[Prompt构建] 知识库ID: {}, 开始检索相关文档", knowledgeBaseId);
 
-        List<Document> relevantDocs = vectorStore.similaritySearch(message);
-        log.debug("[Prompt构建] 检索到 {} 个相关文档", relevantDocs.size());
-        relevantDocs.forEach(doc -> log.debug("[Prompt构建] 文档: {}", doc));
+        // 1. 向量检索：从向量数据库中检索相关文档
+        List<Document> relevantDocs = retrieveRelevantDocuments(message);
+        
+        // 2. 文档过滤：根据知识库ID和相似度阈值过滤文档
+        List<Document> filteredDocs = filterDocumentsByRelevance(relevantDocs, knowledgeBaseId);
+        
+        // 3. 构建文档来源：将文档分组并构建DTO
+        List<DocumentSourceDTO> documentSources = buildDocumentSources(filteredDocs);
+        
+        // 4. 构建Prompt：将文档内容组合成Prompt
+        String prompt = buildSystemPrompt(filteredDocs, message);
 
-        List<Document> filteredDocs = relevantDocs.stream()
-                .filter(doc -> {
-                    Object kbId = doc.getMetadata().get(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_ID);
-                    return kbId != null && kbId.equals(knowledgeBaseId);
-                })
+        return new PromptResult(prompt, documentSources);
+    }
+
+    /**
+     * 从向量数据库检索相关文档
+     */
+    private List<Document> retrieveRelevantDocuments(String message) {
+        SearchRequest searchRequest = SearchRequest.builder()
+                .query(message)
+                .topK(20)
+                .similarityThreshold(0.5)
+                .build();
+
+        List<Document> docs = vectorStore.similaritySearch(searchRequest);
+        log.info("[Prompt构建] 向量检索返回 {} 个文档", docs.size());
+        return docs;
+    }
+
+    /**
+     * 根据知识库ID和相似度过滤文档
+     */
+    private List<Document> filterDocumentsByRelevance(List<Document> docs, String knowledgeBaseId) {
+        final double SIMILARITY_THRESHOLD = 0.5;
+        
+        List<Document> filtered = docs.stream()
+                .filter(doc -> isDocumentRelevant(doc, knowledgeBaseId, SIMILARITY_THRESHOLD))
                 .limit(Constants.Chat.MAX_CONTEXT_LENGTH)
                 .collect(Collectors.toList());
+        
+        log.info("[Prompt构建] 过滤后剩余 {} 个文档", filtered.size());
+        return filtered;
+    }
 
-        log.info("[Prompt构建] 知识库ID: {}, 过滤后剩余 {} 个文档", knowledgeBaseId, filteredDocs.size());
+    /**
+     * 判断文档是否符合相关性要求
+     */
+    private boolean isDocumentRelevant(Document doc, String knowledgeBaseId, double similarityThreshold) {
+        // 检查知识库匹配
+        Object kbId = doc.getMetadata().get(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_ID);
+        boolean kbMatch = kbId != null && kbId.equals(knowledgeBaseId);
+        
+        // 计算并检查相似度
+        double similarity = calculateSimilarity(doc);
+        boolean similarityMatch = similarity >= similarityThreshold;
+        
+        // 记录日志
+        Object docName = doc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_NAME);
+        Object distance = doc.getMetadata().get("distance");
+        log.info("[Prompt构建] 文档: {}, 距离: {}, 相似度: {:.2f}, 知识库匹配: {}, 相似度匹配: {}",
+                docName, distance, similarity, kbMatch, similarityMatch);
+        
+        return kbMatch && similarityMatch;
+    }
 
-        // 按文档ID分组，合并相同文档的多个分块
-        Map<String, List<Document>> docsByDocumentId = filteredDocs.stream()
-                .collect(Collectors.groupingBy(doc -> {
-                    Object docId = doc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_ID);
-                    return docId != null ? docId.toString() : "unknown";
-                }));
+    /**
+     * 计算文档的相似度分数
+     * 公式：余弦相似度 = 1 - 余弦距离
+     */
+    private double calculateSimilarity(Document doc) {
+        Object distanceObj = doc.getMetadata().get("distance");
+        if (distanceObj instanceof Number) {
+            return 1.0 - ((Number) distanceObj).doubleValue();
+        }
+        return 0.0;
+    }
 
-        log.info("[Prompt构建] 检索到 {} 个文档，来自 {} 个不同文件", filteredDocs.size(), docsByDocumentId.size());
+    /**
+     * 构建文档来源DTO列表
+     */
+    private List<DocumentSourceDTO> buildDocumentSources(List<Document> docs) {
+        // 按文档ID分组
+        Map<String, List<Document>> docsById = docs.stream()
+                .collect(Collectors.groupingBy(this::getDocumentId));
+        
+        log.info("[Prompt构建] 来自 {} 个不同文件", docsById.size());
 
-        // 提取文档来源信息，合并相同文档的分块
-        List<DocumentSourceDTO> documentSources = docsByDocumentId.entrySet().stream()
-                .map(entry -> {
-                    String docId = entry.getKey();
-                    List<Document> docChunks = entry.getValue();
-                    Document firstDoc = docChunks.get(0);
-
-                    Object docName = firstDoc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_NAME);
-                    Object kbName = firstDoc.getMetadata().get(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_NAME);
-
-                    // 收集所有分块的片段内容
-                    List<String> snippets = docChunks.stream()
-                            .map(doc -> {
-                                String text = doc.getText();
-                                return text.length() > 200 ? text.substring(0, 200) + "..." : text;
-                            })
-                            .collect(Collectors.toList());
-
-                    log.debug("[Prompt构建] 文档: documentId={}, documentName={}, 匹配分块数={}",
-                            docId, docName, docChunks.size());
-
-                    return DocumentSourceDTO.builder()
-                            .documentId(docId.equals("unknown") ? null : docId)
-                            .documentName(docName != null ? docName.toString() : "未知文档")
-                            .knowledgeBaseName(kbName != null ? kbName.toString() : "未知知识库")
-                            .snippet(snippets.isEmpty() ? "" : snippets.get(0))
-                            .snippets(snippets)
-                            .build();
-                })
+        // 构建DTO并排序
+        List<DocumentSourceDTO> sources = docsById.entrySet().stream()
+                .map(entry -> createDocumentSource(entry.getKey(), entry.getValue()))
+                .sorted(Comparator.comparing(DocumentSourceDTO::getScore, 
+                        Comparator.nullsLast(Comparator.reverseOrder())))
                 .collect(Collectors.toList());
 
-        log.info("[Prompt构建] 提取到 {} 个文档来源", documentSources.size());
-        documentSources.forEach(source ->
-                log.debug("[Prompt构建] 文档来源: documentName={}, knowledgeBaseName={}, 分块数={}",
-                        source.getDocumentName(), source.getKnowledgeBaseName(),
-                        source.getSnippets() != null ? source.getSnippets().size() : 0));
+        log.info("[Prompt构建] 提取到 {} 个文档来源", sources.size());
+        return sources;
+    }
 
-        String context = filteredDocs.stream()
+    /**
+     * 获取文档ID
+     */
+    private String getDocumentId(Document doc) {
+        Object docId = doc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_ID);
+        return docId != null ? docId.toString() : "unknown";
+    }
+
+    /**
+     * 创建单个文档来源DTO
+     */
+    private DocumentSourceDTO createDocumentSource(String docId, List<Document> chunks) {
+        Document firstChunk = chunks.get(0);
+        
+        String docName = getMetadataString(firstChunk, Constants.VectorStore.METADATA_DOCUMENT_NAME, "未知文档");
+        String kbName = getMetadataString(firstChunk, Constants.VectorStore.METADATA_KNOWLEDGE_BASE_NAME, "未知知识库");
+        Double similarity = calculateSimilarity(firstChunk);
+        List<String> snippets = extractSnippets(chunks);
+
+        log.debug("[Prompt构建] 文档来源: documentId={}, documentName={}, 相似度={:.2f}, 分块数={}",
+                docId, docName, similarity, chunks.size());
+
+        return DocumentSourceDTO.builder()
+                .documentId("unknown".equals(docId) ? null : docId)
+                .documentName(docName)
+                .knowledgeBaseName(kbName)
+                .score(similarity)
+                .snippet(snippets.isEmpty() ? "" : snippets.get(0))
+                .snippets(snippets)
+                .build();
+    }
+
+    /**
+     * 从metadata中获取字符串值
+     */
+    private String getMetadataString(Document doc, String key, String defaultValue) {
+        Object value = doc.getMetadata().get(key);
+        return value != null ? value.toString() : defaultValue;
+    }
+
+    /**
+     * 提取文档片段
+     */
+    private List<String> extractSnippets(List<Document> chunks) {
+        return chunks.stream()
+                .map(chunk -> {
+                    String text = chunk.getText();
+                    return text.length() > 200 ? text.substring(0, 200) + "..." : text;
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 构建系统Prompt
+     */
+    private String buildSystemPrompt(List<Document> docs, String message) {
+        String context = docs.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n\n"));
 
@@ -324,10 +421,9 @@ public class ChatService {
 
         SystemPromptTemplate template = new SystemPromptTemplate(systemPrompt);
         Prompt prompt = template.create(Map.of("context", context, "message", message));
-
+        
         log.debug("[Prompt构建] 最终Prompt长度: {} 字符", prompt.getContents().length());
-
-        return new PromptResult(prompt.getContents(), documentSources);
+        return prompt.getContents();
     }
 
     /**
