@@ -4,7 +4,6 @@ import com.snrt.knowledgebase.constants.Constants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
@@ -16,24 +15,31 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * 文档处理服务
+ * 
+ * 使用智能语义分块策略替代传统的固定大小分块
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Service
 public class DocumentProcessingService {
 
     private final VectorStore vectorStore;
-    private final TokenTextSplitter textSplitter;
+    private final SemanticDocumentSplitter semanticSplitter;
 
-    public DocumentProcessingService(VectorStore vectorStore) {
+    public DocumentProcessingService(VectorStore vectorStore, SemanticDocumentSplitter semanticSplitter) {
         this.vectorStore = vectorStore;
-        this.textSplitter = TokenTextSplitter.builder()
-                .withChunkSize(Constants.VectorStore.CHUNK_SIZE)
-                .withMinChunkSizeChars(100)
-                .withMinChunkLengthToEmbed(100)
-                .withMaxNumChunks(1000)
-                .withKeepSeparator(true)
-                .build();
+        this.semanticSplitter = semanticSplitter;
     }
 
+    /**
+     * 处理并索引文档
+     * 
+     * 使用智能语义分块策略，保持语义完整性
+     */
     public void processAndIndexDocument(Path filePath, String documentId, String documentName,
                                         String knowledgeBaseId, String knowledgeBaseName) {
         try {
@@ -41,17 +47,30 @@ public class DocumentProcessingService {
 
             List<Document> documentsWithMetadata = new ArrayList<>();
             for (Document doc : documents) {
+                // 基础元数据
                 doc.getMetadata().put(Constants.VectorStore.METADATA_DOCUMENT_ID, documentId);
                 doc.getMetadata().put(Constants.VectorStore.METADATA_DOCUMENT_NAME, documentName);
                 doc.getMetadata().put(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_ID, knowledgeBaseId);
                 doc.getMetadata().put(Constants.VectorStore.METADATA_KNOWLEDGE_BASE_NAME, knowledgeBaseName);
-                doc.getMetadata().put(Constants.VectorStore.METADATA_CHUNK_ID, UUID.randomUUID().toString());
+                
+                // 生成唯一chunk ID（如果语义分块未生成）
+                if (!doc.getMetadata().containsKey(Constants.VectorStore.METADATA_CHUNK_ID)) {
+                    doc.getMetadata().put(Constants.VectorStore.METADATA_CHUNK_ID, UUID.randomUUID().toString());
+                }
+                
                 documentsWithMetadata.add(doc);
             }
 
+            // 批量写入向量存储
             vectorStore.add(documentsWithMetadata);
 
-            log.info("文档处理完成：{}，解析为 {} 个文档块", filePath.getFileName(), documents.size());
+            // 输出分块统计
+            SemanticDocumentSplitter.ChunkAnalysis analysis = semanticSplitter.analyzeChunkQuality(documents);
+            log.info("文档处理完成：{}，共 {} 个语义块，平均大小 {} 字符，总字符数 {}", 
+                filePath.getFileName(), 
+                analysis.getChunkCount(),
+                String.format("%.0f", analysis.getAvgSize()),
+                analysis.getTotalSize());
 
         } catch (Exception e) {
             log.error("文档处理失败: {}", filePath, e);
@@ -69,24 +88,28 @@ public class DocumentProcessingService {
         return readWithTika(filePath);
     }
     
+    /**
+     * 读取文本文件并使用智能语义分块
+     */
     private List<Document> readTextDocument(Path filePath) throws IOException {
-        List<Document> documents = new ArrayList<>();
-        
         String content = Files.readString(filePath);
         
-        int chunkSize = Constants.VectorStore.CHUNK_SIZE;
-        for (int i = 0; i < content.length(); i += chunkSize) {
-            int end = Math.min(i + chunkSize, content.length());
-            String chunk = content.substring(i, end);
-            
-            Document document = new Document(chunk);
-            document.getMetadata().put(Constants.VectorStore.METADATA_FILE_PATH, filePath.toString());
-            documents.add(document);
-        }
+        // 创建原始文档
+        Document originalDoc = new Document(content);
+        originalDoc.getMetadata().put(Constants.VectorStore.METADATA_FILE_PATH, filePath.toString());
         
-        return documents;
+        // 使用智能语义分块
+        List<Document> splitDocs = semanticSplitter.split(List.of(originalDoc));
+        
+        log.info("文本文件智能分块完成: {}，原始 {} 字符，生成 {} 个语义块", 
+            filePath.getFileName(), content.length(), splitDocs.size());
+        
+        return splitDocs;
     }
     
+    /**
+     * 使用Tika读取文件并使用智能语义分块
+     */
     private List<Document> readWithTika(Path filePath) {
         log.info("开始使用 Tika 读取文件: {}", filePath);
         
@@ -102,14 +125,18 @@ public class DocumentProcessingService {
                 documents.size(),
                 documents.get(0).getText() != null ? documents.get(0).getText().length() : 0);
         
-        List<Document> splitDocuments = textSplitter.apply(documents);
+        // 使用智能语义分块替代传统的TokenTextSplitter
+        List<Document> splitDocuments = semanticSplitter.split(documents);
         
         if (splitDocuments == null || splitDocuments.isEmpty()) {
-            log.warn("TextSplitter 分块后结果为空，使用原始文档: {}", filePath);
+            log.warn("智能分块后结果为空，使用原始文档: {}", filePath);
             splitDocuments = documents;
         }
         
-        log.info("文档分块完成，分块数: {}", splitDocuments.size());
+        // 分析分块质量
+        SemanticDocumentSplitter.ChunkAnalysis analysis = semanticSplitter.analyzeChunkQuality(splitDocuments);
+        log.info("文档智能分块完成: {}，生成 {} 个语义块，平均大小 {} 字符", 
+            filePath.getFileName(), analysis.getChunkCount(), String.format("%.0f", analysis.getAvgSize()));
         
         for (Document doc : splitDocuments) {
             doc.getMetadata().put(Constants.VectorStore.METADATA_FILE_PATH, filePath.toString());

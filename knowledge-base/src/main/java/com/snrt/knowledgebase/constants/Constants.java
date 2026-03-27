@@ -51,14 +51,30 @@ public final class Constants {
     }
 
     public static final class VectorStore {
+        // 传统分块配置（已弃用，保留兼容）
         public static final int CHUNK_SIZE = 1000;
         public static final int CHUNK_OVERLAP = 200;
+        
+        // 智能语义分块配置
+        public static final int SEMANTIC_CHUNK_TARGET_SIZE = 800;   // 目标块大小
+        public static final int SEMANTIC_CHUNK_MIN_SIZE = 300;      // 最小块大小
+        public static final int SEMANTIC_CHUNK_MAX_SIZE = 1500;     // 最大块大小
+        public static final int SEMANTIC_CHUNK_OVERLAP = 100;       // 重叠大小
+        
+        // 元数据字段
         public static final String METADATA_DOCUMENT_ID = "documentId";
         public static final String METADATA_DOCUMENT_NAME = "documentName";
         public static final String METADATA_KNOWLEDGE_BASE_ID = "knowledgeBaseId";
         public static final String METADATA_KNOWLEDGE_BASE_NAME = "knowledgeBaseName";
         public static final String METADATA_CHUNK_ID = "chunkId";
         public static final String METADATA_FILE_PATH = "filePath";
+        
+        // 智能分块新增元数据
+        public static final String METADATA_CHUNK_INDEX = "chunkIndex";
+        public static final String METADATA_CHUNK_TOTAL = "chunkTotal";
+        public static final String METADATA_HEADING_CONTEXT = "headingContext";
+        public static final String METADATA_SEMANTIC_UNITS = "semanticUnits";
+        public static final String METADATA_HIERARCHY_LEVEL = "hierarchyLevel";
     }
 
     public static final class Async {
