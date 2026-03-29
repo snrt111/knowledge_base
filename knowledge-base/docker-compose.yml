@@ -65,12 +65,35 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # RabbitMQ 消息队列服务
+  rabbitmq:
+    image: rabbitmq:3.12-alpine
+    container_name: kb-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    ports:
+      - "5672:5672"    # AMQP端口
+      - "15672:15672"  # 管理界面端口
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - kb-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   pgvector_data:
     driver: local
   minio_data:
     driver: local
   redis_data:
+    driver: local
+  rabbitmq_data:
     driver: local
 
 networks:

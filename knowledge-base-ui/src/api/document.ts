@@ -2,6 +2,18 @@ import { http, unwrapData } from '@/api/http'
 import type { Document, DocumentPreview, PageResult } from '@/types'
 import type { ApiResponse } from '@/types'
 
+export interface BatchOperationResult<T> {
+  total: number
+  success: number
+  failed: number
+  successItems: T[]
+  failedItems: { id: string; reason: string }[]
+}
+
+export interface BatchDocumentRequest {
+  documentIds: string[]
+}
+
 export const documentApi = {
   list(page: number, size: number, knowledgeBaseId?: string, keyword?: string): Promise<PageResult<Document>> {
     return http
@@ -45,5 +57,23 @@ export const documentApi = {
 
   download(id: string): string {
     return `/api/document/${id}/download`
+  },
+
+  /** 批量删除文档 */
+  batchDelete(documentIds: string[]): Promise<BatchOperationResult<Document>> {
+    return http
+      .post<ApiResponse<BatchOperationResult<Document>>>('/document/batch/delete', {
+        documentIds
+      })
+      .then(unwrapData)
+  },
+
+  /** 批量重新处理文档 */
+  batchReprocess(documentIds: string[]): Promise<BatchOperationResult<Document>> {
+    return http
+      .post<ApiResponse<BatchOperationResult<Document>>>('/document/batch/reprocess', {
+        documentIds
+      })
+      .then(unwrapData)
   }
 }

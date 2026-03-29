@@ -1,6 +1,7 @@
 package com.snrt.knowledgebase.service;
 
 import com.snrt.knowledgebase.constants.Constants;
+import com.snrt.knowledgebase.dto.BatchOperationResult;
 import com.snrt.knowledgebase.dto.DocumentDTO;
 import com.snrt.knowledgebase.dto.PageResult;
 import com.snrt.knowledgebase.entity.Document;
@@ -8,6 +9,7 @@ import com.snrt.knowledgebase.entity.KnowledgeBase;
 import com.snrt.knowledgebase.exception.DocumentException;
 import com.snrt.knowledgebase.exception.ResourceNotFoundException;
 import com.snrt.knowledgebase.mapper.DocumentMapper;
+import com.snrt.knowledgebase.messaging.DocumentProcessProducer;
 import com.snrt.knowledgebase.repository.DocumentRepository;
 import com.snrt.knowledgebase.repository.KnowledgeBaseRepository;
 import com.snrt.knowledgebase.service.document.DocumentProcessor;
@@ -16,20 +18,21 @@ import com.snrt.knowledgebase.service.document.DocumentStorageService;
 import com.snrt.knowledgebase.service.document.DocumentStorageService.StorageResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executor;
 
 @Slf4j
 @Service
@@ -43,9 +46,7 @@ public class DocumentService {
     private final DocumentMapper documentMapper;
     private final DocumentProcessorFactory processorFactory;
     private final DocumentStorageService storageService;
-
-    @Qualifier("documentProcessorExecutor")
-    private final Executor documentProcessorExecutor;
+    private final DocumentProcessProducer documentProcessProducer;
 
     @Transactional(readOnly = true)
     public PageResult<DocumentDTO> listDocuments(Integer page, Integer size, String knowledgeBaseId, String keyword) {
@@ -100,9 +101,24 @@ public class DocumentService {
 
             Document saved = documentRepository.save(doc);
 
-            processDocumentAsync(saved.getId());
+            // 在事务提交后发送消息，确保消费者能查询到文档
+            String finalOriginalFilename = originalFilename;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    documentProcessProducer.sendDocumentProcessMessage(
+                            saved.getId(),
+                            saved.getName(),
+                            kb.getId(),
+                            kb.getName(),
+                            saved.getFilePath(),
+                            saved.getObjectName(),
+                            saved.getType()
+                    );
+                    log.info("文档上传成功: id={}, name={}, objectName={}", saved.getId(), finalOriginalFilename, storageResult.objectName());
+                }
+            });
 
-            log.info("文档上传成功: id={}, name={}, objectName={}", saved.getId(), originalFilename, storageResult.objectName());
             return documentMapper.toDTO(saved);
         } catch (IOException e) {
             log.error("文件上传失败: {}", e.getMessage(), e);
@@ -129,9 +145,25 @@ public class DocumentService {
 
         eventPublisher.publishStatusChanged(this, doc, oldStatus, Document.DocumentStatus.PROCESSING);
 
-        processDocumentAsync(doc.getId());
+        // 在事务提交后发送消息，确保消费者能查询到文档
+        String finalId = id;
+        String finalOldStatus = oldStatus.toString();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                documentProcessProducer.sendDocumentProcessMessage(
+                        doc.getId(),
+                        doc.getName(),
+                        doc.getKnowledgeBase().getId(),
+                        doc.getKnowledgeBase().getName(),
+                        doc.getFilePath(),
+                        doc.getObjectName(),
+                        doc.getType()
+                );
+                log.info("已提交文档重新向量化: id={}, name={}, previousStatus={}", finalId, doc.getName(), finalOldStatus);
+            }
+        });
 
-        log.info("已提交文档重新向量化: id={}, name={}, previousStatus={}", id, doc.getName(), oldStatus);
         return documentMapper.toDTO(doc);
     }
 
@@ -173,49 +205,132 @@ public class DocumentService {
         );
     }
 
-    private void processDocumentAsync(String documentId) {
-        documentProcessorExecutor.execute(() -> {
+    @Transactional
+    public BatchOperationResult<DocumentDTO> batchDeleteDocuments(List<String> documentIds) {
+        BatchOperationResult<DocumentDTO> result = new BatchOperationResult<>();
+        result.setTotal(documentIds.size());
+
+        List<DocumentDTO> successItems = new ArrayList<>();
+        List<BatchOperationResult.FailedItem> failedItems = new ArrayList<>();
+
+        for (String id : documentIds) {
             try {
-                Document document = documentRepository.findByIdAndIsDeletedFalseWithKnowledgeBase(documentId)
+                Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
                         .orElse(null);
-                
-                if (document == null) {
-                    log.warn("文档不存在或已被删除，跳过处理: documentId={}", documentId);
-                    return;
+                if (doc == null) {
+                    failedItems.add(BatchOperationResult.FailedItem.builder()
+                            .id(id)
+                            .reason("文档不存在或已被删除")
+                            .build());
+                    continue;
                 }
 
-                Path filePath = storageService.ensureLocalFileForProcessing(document);
-                String knowledgeBaseId = document.getKnowledgeBase().getId();
-                String knowledgeBaseName = document.getKnowledgeBase().getName();
+                doc.setIsDeleted(true);
+                documentRepository.save(doc);
 
-                DocumentProcessor processor = processorFactory.getProcessor(document.getType());
-                processor.processDocument(filePath, document.getId(), document.getName(),
-                        knowledgeBaseId, knowledgeBaseName);
-
-                Document.DocumentStatus oldStatus = document.getStatus();
-                document.setStatus(Document.DocumentStatus.COMPLETED);
-                documentRepository.save(document);
-
-                eventPublisher.publishStatusChanged(this, document, oldStatus, Document.DocumentStatus.COMPLETED);
-
-                log.info("文档处理完成: id={}, name={}", document.getId(), document.getName());
-            } catch (Exception e) {
                 try {
-                    Document doc = documentRepository.findByIdAndIsDeletedFalseWithKnowledgeBase(documentId)
-                            .orElse(null);
-                    if (doc != null) {
-                        Document.DocumentStatus oldStatus = doc.getStatus();
-                        doc.setStatus(Document.DocumentStatus.FAILED);
-                        documentRepository.save(doc);
-                        eventPublisher.publishStatusChanged(this, doc, oldStatus, Document.DocumentStatus.FAILED);
-                    }
-                } catch (Exception ex) {
-                    log.error("更新文档失败状态时出错: documentId={}", documentId, ex);
+                    documentProcessingService.deleteDocumentFromVectorStore(id);
+                } catch (Exception e) {
+                    log.warn("向量存储中删除失败: documentId={}, error={}", id, e.getMessage());
                 }
 
-                log.error("文档处理失败: id={}, error={}", documentId, e.getMessage(), e);
+                storageService.deleteFile(doc.getObjectName(), doc.getFilePath());
+
+                successItems.add(documentMapper.toDTO(doc));
+                log.info("批量删除文档成功: id={}", id);
+            } catch (Exception e) {
+                failedItems.add(BatchOperationResult.FailedItem.builder()
+                        .id(id)
+                        .reason(e.getMessage())
+                        .build());
+                log.error("批量删除文档失败: id={}, error={}", id, e.getMessage(), e);
             }
-        });
+        }
+
+        result.setSuccess(successItems.size());
+        result.setFailed(failedItems.size());
+        result.setSuccessItems(successItems);
+        result.setFailedItems(failedItems);
+
+        log.info("批量删除文档完成: total={}, success={}, failed={}",
+                result.getTotal(), result.getSuccess(), result.getFailed());
+        return result;
+    }
+
+    @Transactional
+    public BatchOperationResult<DocumentDTO> batchReprocessDocuments(List<String> documentIds) {
+        BatchOperationResult<DocumentDTO> result = new BatchOperationResult<>();
+        result.setTotal(documentIds.size());
+
+        List<DocumentDTO> successItems = new ArrayList<>();
+        List<BatchOperationResult.FailedItem> failedItems = new ArrayList<>();
+
+        for (String id : documentIds) {
+            try {
+                Document doc = documentRepository.findByIdAndIsDeletedFalseWithKnowledgeBase(id)
+                        .orElse(null);
+                if (doc == null) {
+                    failedItems.add(BatchOperationResult.FailedItem.builder()
+                            .id(id)
+                            .reason("文档不存在或已被删除")
+                            .build());
+                    continue;
+                }
+
+                if (doc.getStatus() == Document.DocumentStatus.PROCESSING) {
+                    failedItems.add(BatchOperationResult.FailedItem.builder()
+                            .id(id)
+                            .reason("文档正在处理中")
+                            .build());
+                    continue;
+                }
+
+                storageService.ensureLocalFileForProcessing(doc);
+                documentProcessingService.deleteDocumentFromVectorStore(id);
+
+                Document.DocumentStatus oldStatus = doc.getStatus();
+                doc.setStatus(Document.DocumentStatus.PROCESSING);
+                documentRepository.save(doc);
+
+                eventPublisher.publishStatusChanged(this, doc, oldStatus, Document.DocumentStatus.PROCESSING);
+
+                // 在事务提交后发送消息，确保消费者能查询到文档
+                Document finalDoc = doc;
+                String finalId = id;
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        documentProcessProducer.sendDocumentProcessMessage(
+                                finalDoc.getId(),
+                                finalDoc.getName(),
+                                finalDoc.getKnowledgeBase().getId(),
+                                finalDoc.getKnowledgeBase().getName(),
+                                finalDoc.getFilePath(),
+                                finalDoc.getObjectName(),
+                                finalDoc.getType()
+                        );
+                        log.info("批量重新处理文档成功: id={}", finalId);
+                    }
+                });
+
+                successItems.add(documentMapper.toDTO(doc));
+            } catch (Exception e) {
+                failedItems.add(BatchOperationResult.FailedItem.builder()
+                        .id(id)
+                        .reason(e.getMessage())
+                        .build());
+                log.error("批量重新处理文档失败: id={}, error={}", id, e.getMessage(), e);
+            }
+        }
+
+        result.setSuccess(successItems.size());
+        result.setFailed(failedItems.size());
+        result.setSuccessItems(successItems);
+        result.setFailedItems(failedItems);
+
+        log.info("批量重新处理文档完成: total={}, success={}, failed={}",
+                result.getTotal(), result.getSuccess(), result.getFailed());
+        return result;
     }
 
     private String getFileExtension(String filename) {

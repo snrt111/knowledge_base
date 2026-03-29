@@ -8,7 +8,7 @@ public final class Constants {
     }
 
     public static final class File {
-        public static final long MAX_SIZE = 50 * 1024 * 1024;
+        public static final long MAX_SIZE = 1024L * 1024 * 1024; // 1GB
         // 只支持 PDF、Word、Excel、PPT、Markdown、TXT
         public static final Set<String> ALLOWED_TYPES = Set.of(
                 "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "md", "txt"

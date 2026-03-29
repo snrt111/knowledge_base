@@ -1,13 +1,16 @@
 package com.snrt.knowledgebase.controller;
 
 import com.snrt.knowledgebase.dto.ApiResponse;
+import com.snrt.knowledgebase.dto.BatchOperationResult;
 import com.snrt.knowledgebase.dto.DocumentDTO;
 import com.snrt.knowledgebase.dto.DocumentPreviewDTO;
 import com.snrt.knowledgebase.dto.PageResult;
+import com.snrt.knowledgebase.dto.request.BatchDocumentRequest;
 import com.snrt.knowledgebase.exception.DocumentException;
 import com.snrt.knowledgebase.service.DocumentPreviewService;
 import com.snrt.knowledgebase.service.DocumentService;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -99,6 +102,18 @@ public class DocumentController {
     @GetMapping("/{id}/preview")
     public ApiResponse<DocumentPreviewDTO> preview(@PathVariable String id) {
         return ApiResponse.success(documentPreviewService.previewDocument(id));
+    }
+
+    @PostMapping("/batch/delete")
+    public ApiResponse<BatchOperationResult<DocumentDTO>> batchDelete(
+            @Valid @RequestBody BatchDocumentRequest request) {
+        return ApiResponse.success(documentService.batchDeleteDocuments(request.getDocumentIds()));
+    }
+
+    @PostMapping("/batch/reprocess")
+    public ApiResponse<BatchOperationResult<DocumentDTO>> batchReprocess(
+            @Valid @RequestBody BatchDocumentRequest request) {
+        return ApiResponse.success(documentService.batchReprocessDocuments(request.getDocumentIds()));
     }
 
 }

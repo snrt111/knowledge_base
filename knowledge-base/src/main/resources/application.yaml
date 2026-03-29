@@ -2,6 +2,12 @@ server:
   port: 8080
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 1073741824
+      max-request-size: 1073741824
+      enabled: true
+      file-size-threshold: 0
   application:
     name: knowledge-base
   datasource:
@@ -36,6 +42,24 @@ spring:
           max-active: 8
           max-idle: 8
           min-idle: 0
+
+  # RabbitMQ配置
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin123
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 5000
+          multiplier: 2
+          max-interval: 30000
+        default-requeue-rejected: false
   ai:
     ollama:
       base-url: http://localhost:11434

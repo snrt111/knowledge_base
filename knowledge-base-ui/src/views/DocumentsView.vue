@@ -7,10 +7,28 @@
             <el-icon><Document /></el-icon>
             文档管理
           </span>
-          <el-button type="primary" @click="showUploadDialog">
-            <el-icon><Upload /></el-icon>
-            上传文档
-          </el-button>
+          <div class="header-actions">
+            <el-button
+              type="danger"
+              :disabled="selectedDocuments.length === 0"
+              @click="handleBatchDelete"
+            >
+              <el-icon><Delete /></el-icon>
+              批量删除 ({{ selectedDocuments.length }})
+            </el-button>
+            <el-button
+              type="warning"
+              :disabled="selectedDocuments.length === 0"
+              @click="handleBatchReprocess"
+            >
+              <el-icon><RefreshRight /></el-icon>
+              批量重新处理 ({{ selectedDocuments.length }})
+            </el-button>
+            <el-button type="primary" @click="showUploadDialog">
+              <el-icon><Upload /></el-icon>
+              上传文档
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -37,7 +55,13 @@
         </el-form-item>
       </el-form>
 
-      <el-table :data="documents" v-loading="loading" stripe>
+      <el-table
+        :data="documents"
+        v-loading="loading"
+        stripe
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="55" />
         <el-table-column type="index" width="60" label="序号" />
         <el-table-column prop="name" label="文档名称" min-width="200">
           <template #default="{ row }">
@@ -155,7 +179,7 @@
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持 PDF、Word、Excel、PPT、Markdown、TXT 格式，单个文件不超过 50MB
+                支持 PDF、Word、Excel、PPT、Markdown、TXT 格式，单个文件不超过 1GB
               </div>
             </template>
           </el-upload>
@@ -384,6 +408,89 @@ const handleDelete = (row: Document) => {
   })
 }
 
+// 批量操作相关
+const selectedDocuments = ref<Document[]>([])
+
+const handleSelectionChange = (selection: Document[]) => {
+  selectedDocuments.value = selection
+}
+
+const handleBatchDelete = async () => {
+  if (selectedDocuments.value.length === 0) {
+    ElMessage.warning('请先选择要删除的文档')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedDocuments.value.length} 个文档吗？`,
+      '批量删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  const ids = selectedDocuments.value.map(doc => doc.id)
+  try {
+    const result = await documentApi.batchDelete(ids)
+    if (result.failed > 0) {
+      ElMessage.warning(`批量删除完成：成功 ${result.success} 个，失败 ${result.failed} 个`)
+    } else {
+      ElMessage.success(`成功删除 ${result.success} 个文档`)
+    }
+    selectedDocuments.value = []
+    fetchDocuments()
+  } catch (error) {
+    ElMessage.error('批量删除失败')
+  }
+}
+
+const handleBatchReprocess = async () => {
+  if (selectedDocuments.value.length === 0) {
+    ElMessage.warning('请先选择要重新处理的文档')
+    return
+  }
+
+  const processingDocs = selectedDocuments.value.filter(doc => doc.status === 'processing')
+  if (processingDocs.length > 0) {
+    ElMessage.warning(`选中的文档中有 ${processingDocs.length} 个正在处理中，请取消选择或等待处理完成`)
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `将对选中的 ${selectedDocuments.value.length} 个文档重新向量化，是否继续？`,
+      '批量重新向量化',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    )
+  } catch {
+    return
+  }
+
+  const ids = selectedDocuments.value.map(doc => doc.id)
+  try {
+    const result = await documentApi.batchReprocess(ids)
+    if (result.failed > 0) {
+      ElMessage.warning(`批量重新处理完成：成功 ${result.success} 个，失败 ${result.failed} 个`)
+    } else {
+      ElMessage.success(`已提交 ${result.success} 个文档重新处理`)
+    }
+    selectedDocuments.value = []
+    fetchDocuments()
+  } catch (error) {
+    ElMessage.error('批量重新处理失败')
+  }
+}
+
 </script>
 
 <style scoped>
@@ -395,6 +502,11 @@ const handleDelete = (row: Document) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .title {
