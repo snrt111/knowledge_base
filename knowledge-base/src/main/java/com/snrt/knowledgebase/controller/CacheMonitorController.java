@@ -3,8 +3,8 @@ package com.snrt.knowledgebase.controller;
 import com.snrt.knowledgebase.dto.ApiResponse;
 import com.snrt.knowledgebase.dto.CacheStatsDTO;
 import com.snrt.knowledgebase.service.RAGCacheManager;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -20,10 +20,14 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/api/monitor")
-@RequiredArgsConstructor
 public class CacheMonitorController {
 
     private final RAGCacheManager ragCacheManager;
+
+    @Autowired
+    public CacheMonitorController(RAGCacheManager ragCacheManager) {
+        this.ragCacheManager = ragCacheManager;
+    }
 
     /**
      * 获取RAG缓存完整统计信息

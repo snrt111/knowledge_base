@@ -301,8 +301,8 @@ public class RAGCacheManager {
     private long countRedisKeys(String pattern) {
         try {
             AtomicLong count = new AtomicLong(0);
-            redisTemplate.execute((connection) -> {
-                try (var cursor = connection.scan(ScanOptions.scanOptions().match(pattern).build())) {
+            redisTemplate.execute((org.springframework.data.redis.core.RedisCallback<Void>) (connection) -> {
+                try (var cursor = connection.keyCommands().scan(ScanOptions.scanOptions().match(pattern).build())) {
                     while (cursor.hasNext()) {
                         count.incrementAndGet();
                         // 限制最大统计数量，避免性能问题
