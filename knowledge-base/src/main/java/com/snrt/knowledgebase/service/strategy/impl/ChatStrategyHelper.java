@@ -15,6 +15,7 @@ import com.snrt.knowledgebase.repository.ChatSessionRepository;
 import com.snrt.knowledgebase.repository.KnowledgeBaseRepository;
 import com.snrt.knowledgebase.service.ConversationSummarizer;
 import com.snrt.knowledgebase.service.RAGCacheManager;
+import com.snrt.knowledgebase.service.retrieval.AdvancedRetrievalService;
 import com.snrt.knowledgebase.util.LogUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class ChatStrategyHelper {
     private final ChatMessageMapper chatMessageMapper;
     private final RAGCacheManager ragCacheManager;
     private final ConversationSummarizer conversationSummarizer;
+    private final AdvancedRetrievalService advancedRetrievalService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ChatResponseDTO executeChat(ChatRequest request) {
@@ -179,6 +181,7 @@ public class ChatStrategyHelper {
 
         log.info("[Prompt构建] 知识库ID: {}, 开始检索相关文档", knowledgeBaseId);
 
+        // 检查缓存
         Optional<RAGCacheManager.CachedSearchResult> cachedResult =
                 ragCacheManager.getCachedSearchResult(message, knowledgeBaseId);
 
@@ -190,14 +193,92 @@ public class ChatStrategyHelper {
             return new PromptResult(prompt, cachedSources);
         }
 
-        List<Document> relevantDocs = retrieveRelevantDocuments(message);
-        List<Document> filteredDocs = filterDocumentsByRelevance(relevantDocs, knowledgeBaseId);
-        List<DocumentSourceDTO> documentSources = buildDocumentSources(filteredDocs);
-        String prompt = buildSystemPrompt(filteredDocs, message, compressedContext);
+        // 使用高级检索服务（多路召回 + 重排序）
+        log.info("[Prompt构建] 使用高级检索服务（多路召回+重排序）");
+        List<Document> retrievedDocs = advancedRetrievalService.retrieve(
+                message, knowledgeBaseId, Constants.Chat.MAX_RETRIEVAL_RESULTS);
 
-        ragCacheManager.cacheSearchResult(message, knowledgeBaseId, filteredDocs, documentSources);
+        if (retrievedDocs.isEmpty()) {
+            log.warn("[Prompt构建] 未检索到相关文档");
+            String prompt = buildSystemPrompt(null, message, compressedContext);
+            return new PromptResult(prompt, null);
+        }
+
+        // 转换为 DocumentSourceDTO
+        List<DocumentSourceDTO> documentSources = convertToDocumentSources(retrievedDocs);
+
+        // 构建 Prompt
+        String prompt = buildSystemPrompt(retrievedDocs, message, compressedContext);
+
+        // 缓存结果
+        ragCacheManager.cacheSearchResult(message, knowledgeBaseId, retrievedDocs, documentSources);
+
+        // 记录检索质量
+        double quality = advancedRetrievalService.estimateRetrievalQuality(retrievedDocs);
+        log.info("[Prompt构建] 检索完成，文档数: {}, 质量分数: {:.2f}",
+                retrievedDocs.size(), quality);
 
         return new PromptResult(prompt, documentSources);
+    }
+
+    /**
+     * 将 Document 转换为 DocumentSourceDTO
+     */
+    private List<DocumentSourceDTO> convertToDocumentSources(List<Document> documents) {
+        // 按文档ID分组
+        Map<String, List<Document>> docsById = documents.stream()
+                .collect(Collectors.groupingBy(this::getDocumentId));
+
+        return docsById.entrySet().stream()
+                .map(entry -> createDocumentSource(entry.getKey(), entry.getValue()))
+                .sorted((s1, s2) -> {
+                    Double score1 = s1.getScore();
+                    Double score2 = s2.getScore();
+                    if (score1 == null && score2 == null) return 0;
+                    if (score1 == null) return 1;
+                    if (score2 == null) return -1;
+                    return Double.compare(score2, score1);
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 创建文档来源DTO
+     */
+    private DocumentSourceDTO createDocumentSource(String docId, List<Document> chunks) {
+        Document firstChunk = chunks.get(0);
+
+        String docName = getMetadataString(firstChunk, Constants.VectorStore.METADATA_DOCUMENT_NAME, "未知文档");
+        String kbName = getMetadataString(firstChunk, Constants.VectorStore.METADATA_KNOWLEDGE_BASE_NAME, "未知知识库");
+
+        // 计算综合分数
+        double score = chunks.stream()
+                .mapToDouble(doc -> {
+                    Double rrf = (Double) doc.getMetadata().get("rrf_score");
+                    Double rule = (Double) doc.getMetadata().get("rule_score");
+                    double s = 0;
+                    if (rrf != null) s += rrf * 0.3;
+                    if (rule != null) s += rule * 0.7;
+                    return s;
+                })
+                .max()
+                .orElse(0.0);
+
+        // 提取片段
+        List<String> snippets = chunks.stream()
+                .map(Document::getText)
+                .filter(text -> text != null && !text.isEmpty())
+                .limit(3)
+                .collect(Collectors.toList());
+
+        return DocumentSourceDTO.builder()
+                .documentId("unknown".equals(docId) ? null : docId)
+                .documentName(docName)
+                .knowledgeBaseName(kbName)
+                .score(score)
+                .snippet(snippets.isEmpty() ? "" : snippets.get(0))
+                .snippets(snippets)
+                .build();
     }
 
     private List<Document> retrieveRelevantDocuments(String message) {
@@ -269,83 +350,28 @@ public class ChatStrategyHelper {
         return 0.0;
     }
 
-    private List<DocumentSourceDTO> buildDocumentSources(List<Document> docs) {
-        Map<String, List<Document>> docsById = groupAndSortBySimilarity(docs);
-
-        log.info("[Prompt构建] 来自 {} 个不同文件", docsById.size());
-
-        List<DocumentSourceDTO> sources = docsById.entrySet().stream()
-                .map(entry -> createDocumentSource(entry.getKey(), entry.getValue()))
-                .sorted((s1, s2) -> {
-                    Double score1 = s1.getScore();
-                    Double score2 = s2.getScore();
-                    if (score1 == null && score2 == null) return 0;
-                    if (score1 == null) return 1;
-                    if (score2 == null) return -1;
-                    return Double.compare(score2, score1);
-                })
-                .collect(Collectors.toList());
-
-        sources.forEach(source -> {
-            log.debug("[Prompt构建] 文档来源: {}, 相似度: {:.2f}",
-                    source.getDocumentName(), source.getScore());
-        });
-
-        log.info("[Prompt构建] 提取到 {} 个文档来源", sources.size());
-        return sources;
-    }
-
-    private Map<String, List<Document>> groupAndSortBySimilarity(List<Document> docs) {
-        return docs.stream()
-                .collect(Collectors.groupingBy(
-                        this::getDocumentId,
-                        Collectors.collectingAndThen(
-                                Collectors.toList(),
-                                list -> {
-                                    list.sort(Comparator.comparingDouble(this::calculateSimilarity).reversed());
-                                    return list;
-                                }
-                        )
-                ));
-    }
-
-    private String getDocumentId(Document doc) {
-        Object docId = doc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_ID);
-        return docId != null ? docId.toString() : "unknown";
-    }
-
-    private DocumentSourceDTO createDocumentSource(String docId, List<Document> chunks) {
-        Document firstChunk = chunks.get(0);
-
-        String docName = getMetadataString(firstChunk, Constants.VectorStore.METADATA_DOCUMENT_NAME, "未知文档");
-        String kbName = getMetadataString(firstChunk, Constants.VectorStore.METADATA_KNOWLEDGE_BASE_NAME, "未知知识库");
-        Double similarity = calculateSimilarity(firstChunk);
-        List<String> snippets = extractSnippets(chunks);
-
-        log.debug("[Prompt构建] 文档来源: documentId={}, documentName={}, 相似度={:.2f}, 分块数={}",
-                docId, docName, similarity, chunks.size());
-
-        return DocumentSourceDTO.builder()
-                .documentId("unknown".equals(docId) ? null : docId)
-                .documentName(docName)
-                .knowledgeBaseName(kbName)
-                .score(similarity)
-                .snippet(snippets.isEmpty() ? "" : snippets.get(0))
-                .snippets(snippets)
-                .build();
-    }
-
-    private String getMetadataString(Document doc, String key, String defaultValue) {
-        Object value = doc.getMetadata().get(key);
-        return value != null ? value.toString() : defaultValue;
-    }
-
     private List<String> extractSnippets(List<Document> chunks) {
         return chunks.stream()
                 .map(Document::getText)
                 .filter(text -> text != null && !text.isEmpty())
                 .limit(3)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取文档ID
+     */
+    private String getDocumentId(Document doc) {
+        Object docId = doc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_ID);
+        return docId != null ? docId.toString() : "unknown";
+    }
+
+    /**
+     * 获取元数据字符串
+     */
+    private String getMetadataString(Document doc, String key, String defaultValue) {
+        Object value = doc.getMetadata().get(key);
+        return value != null ? value.toString() : defaultValue;
     }
 
     private String buildSystemPrompt(List<Document> documents, String userMessage, String compressedContext) {
@@ -402,7 +428,6 @@ public class ChatStrategyHelper {
         }
     }
 
-    @lombok.Data
     private static class PromptResult {
         private final String prompt;
         private final List<DocumentSourceDTO> documentSources;
@@ -410,6 +435,14 @@ public class ChatStrategyHelper {
         PromptResult(String prompt, List<DocumentSourceDTO> documentSources) {
             this.prompt = prompt;
             this.documentSources = documentSources;
+        }
+
+        public String getPrompt() {
+            return prompt;
+        }
+
+        public List<DocumentSourceDTO> getDocumentSources() {
+            return documentSources;
         }
     }
 }

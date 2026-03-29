@@ -17,7 +17,7 @@ spring:
       max-lifetime: 1800000
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
     show-sql: false
     properties:
       hibernate:
@@ -73,7 +73,7 @@ springdoc:
     redis:
       host: localhost
       port: 6379
-      password: redis123
+      # password: redis123  # 如果Redis没有密码，请注释此行
       database: 0
       timeout: 5000
       lettuce:

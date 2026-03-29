@@ -5,11 +5,14 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import com.snrt.knowledgebase.dto.CacheStatsDTO;
 import com.snrt.knowledgebase.dto.DocumentSourceDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
@@ -17,10 +20,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @Component
@@ -37,10 +42,20 @@ public class RAGCacheManager {
     // L1: 本地缓存 - 热点Query响应缓存
     private Cache<String, CachedSearchResult> localSearchCache;
 
+    // 缓存统计计数器
+    private final AtomicLong redisHitCount = new AtomicLong(0);
+    private final AtomicLong redisMissCount = new AtomicLong(0);
+    private final AtomicLong chatResponseHitCount = new AtomicLong(0);
+    private final AtomicLong chatResponseMissCount = new AtomicLong(0);
+
     private static final String REDIS_KEY_PREFIX = "rag:search:";
     private static final String REDIS_RESPONSE_PREFIX = "rag:response:";
     private static final Duration REDIS_TTL = Duration.ofMinutes(10);
     private static final Duration LOCAL_TTL = Duration.ofMinutes(5);
+
+    // 命中率阈值配置
+    private static final double HIT_RATE_HEALTHY = 0.7;
+    private static final double HIT_RATE_WARNING = 0.4;
 
     @PostConstruct
     public void init() {
@@ -147,11 +162,15 @@ public class RAGCacheManager {
                 CachedSearchResult result = deserializeSearchResult(json);
                 // 回填本地缓存
                 localSearchCache.put(cacheKey, result);
+                redisHitCount.incrementAndGet();
                 log.debug("检索结果Redis缓存命中: key={}", cacheKey);
                 return Optional.of(result);
+            } else {
+                redisMissCount.incrementAndGet();
             }
         } catch (Exception e) {
             log.warn("Redis缓存读取失败: {}", e.getMessage());
+            redisMissCount.incrementAndGet();
         }
 
         return Optional.empty();
@@ -178,11 +197,15 @@ public class RAGCacheManager {
         try {
             String response = redisTemplate.opsForValue().get(cacheKey);
             if (response != null) {
+                chatResponseHitCount.incrementAndGet();
                 log.debug("聊天响应缓存命中: key={}", cacheKey);
                 return Optional.of(response);
+            } else {
+                chatResponseMissCount.incrementAndGet();
             }
         } catch (Exception e) {
             log.warn("聊天响应缓存读取失败: {}", e.getMessage());
+            chatResponseMissCount.incrementAndGet();
         }
 
         return Optional.empty();
@@ -190,14 +213,177 @@ public class RAGCacheManager {
 
     // ==================== 缓存统计 ====================
 
+    /**
+     * 获取完整的缓存统计信息
+     */
+    public CacheStatsDTO getCacheStats() {
+        CacheStats embeddingStats = embeddingCache.stats();
+        CacheStats localSearchStats = localSearchCache.stats();
+
+        CacheStatsDTO.CacheDetailStats embeddingDetail = buildCacheDetailStats(
+                "Embedding缓存", embeddingCache.estimatedSize(), embeddingStats);
+
+        CacheStatsDTO.CacheDetailStats localSearchDetail = buildCacheDetailStats(
+                "本地检索缓存", localSearchCache.estimatedSize(), localSearchStats);
+
+        CacheStatsDTO.RedisCacheStats redisDetail = buildRedisCacheStats();
+
+        // 计算综合命中率
+        double overallHitRate = calculateOverallHitRate(embeddingStats, localSearchStats);
+
+        return CacheStatsDTO.builder()
+                .timestamp(LocalDateTime.now())
+                .embeddingCacheStats(embeddingDetail)
+                .localSearchCacheStats(localSearchDetail)
+                .redisCacheStats(redisDetail)
+                .overallHitRate(overallHitRate)
+                .build();
+    }
+
+    /**
+     * 构建本地缓存详细统计
+     */
+    private CacheStatsDTO.CacheDetailStats buildCacheDetailStats(String cacheName, long size, CacheStats stats) {
+        long hitCount = stats.hitCount();
+        long missCount = stats.missCount();
+        long totalRequests = hitCount + missCount;
+        double hitRate = totalRequests > 0 ? (double) hitCount / totalRequests : 0.0;
+
+        return CacheStatsDTO.CacheDetailStats.builder()
+                .cacheName(cacheName)
+                .size(size)
+                .hitRate(hitRate)
+                .hitCount(hitCount)
+                .missCount(missCount)
+                .loadCount(stats.loadCount())
+                .loadFailureCount(stats.loadFailureCount())
+                .averageLoadPenalty(stats.averageLoadPenalty() / 1_000_000.0) // 转换为毫秒
+                .evictionCount(stats.evictionCount())
+                .totalRequests(totalRequests)
+                .status(determineCacheStatus(hitRate))
+                .build();
+    }
+
+    /**
+     * 构建Redis缓存统计
+     */
+    private CacheStatsDTO.RedisCacheStats buildRedisCacheStats() {
+        try {
+            long searchResultCount = countRedisKeys(REDIS_KEY_PREFIX + "*");
+            long chatResponseCount = countRedisKeys(REDIS_RESPONSE_PREFIX + "*");
+
+            long redisHits = redisHitCount.get();
+            long redisMisses = redisMissCount.get();
+            long chatHits = chatResponseHitCount.get();
+            long chatMisses = chatResponseMissCount.get();
+
+            return CacheStatsDTO.RedisCacheStats.builder()
+                    .connected(true)
+                    .searchResultKeyCount(searchResultCount)
+                    .chatResponseKeyCount(chatResponseCount)
+                    .totalKeyCount(searchResultCount + chatResponseCount)
+                    .memoryUsage(null) // Redis内存使用需要额外配置
+                    .build();
+        } catch (Exception e) {
+            log.warn("获取Redis统计失败: {}", e.getMessage());
+            return CacheStatsDTO.RedisCacheStats.builder()
+                    .connected(false)
+                    .searchResultKeyCount(0L)
+                    .chatResponseKeyCount(0L)
+                    .totalKeyCount(0L)
+                    .build();
+        }
+    }
+
+    /**
+     * 统计Redis中匹配模式的键数量
+     */
+    private long countRedisKeys(String pattern) {
+        try {
+            AtomicLong count = new AtomicLong(0);
+            redisTemplate.execute((connection) -> {
+                try (var cursor = connection.scan(ScanOptions.scanOptions().match(pattern).build())) {
+                    while (cursor.hasNext()) {
+                        count.incrementAndGet();
+                        // 限制最大统计数量，避免性能问题
+                        if (count.get() >= 10000) {
+                            break;
+                        }
+                    }
+                }
+                return null;
+            });
+            return count.get();
+        } catch (Exception e) {
+            log.warn("统计Redis键数量失败: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * 计算综合命中率
+     */
+    private double calculateOverallHitRate(CacheStats embeddingStats, CacheStats localSearchStats) {
+        long totalHits = embeddingStats.hitCount() + localSearchStats.hitCount() + redisHitCount.get() + chatResponseHitCount.get();
+        long totalMisses = embeddingStats.missCount() + localSearchStats.missCount() + redisMissCount.get() + chatResponseMissCount.get();
+        long total = totalHits + totalMisses;
+        return total > 0 ? (double) totalHits / total : 0.0;
+    }
+
+    /**
+     * 根据命中率确定缓存状态
+     */
+    private String determineCacheStatus(double hitRate) {
+        if (hitRate >= HIT_RATE_HEALTHY) {
+            return "HEALTHY";
+        } else if (hitRate >= HIT_RATE_WARNING) {
+            return "WARNING";
+        } else {
+            return "CRITICAL";
+        }
+    }
+
+    /**
+     * 重置统计计数器（用于定期重置或测试）
+     */
+    public void resetStats() {
+        redisHitCount.set(0);
+        redisMissCount.set(0);
+        chatResponseHitCount.set(0);
+        chatResponseMissCount.set(0);
+        log.info("RAG缓存统计计数器已重置");
+    }
+
+    /**
+     * 记录缓存统计到日志
+     */
     public void logCacheStats() {
+        CacheStatsDTO stats = getCacheStats();
         log.info("=== RAG缓存统计 ===");
-        log.info("Embedding缓存 - 估计大小: {}, 命中率: {}",
-                embeddingCache.estimatedSize(),
-                embeddingCache.stats().hitRate());
-        log.info("本地检索缓存 - 估计大小: {}, 命中率: {}",
-                localSearchCache.estimatedSize(),
-                localSearchCache.stats().hitRate());
+        log.info("统计时间: {}", stats.getTimestamp());
+        log.info("综合命中率: {:.2%}", stats.getOverallHitRate());
+
+        CacheStatsDTO.CacheDetailStats embeddingStats = stats.getEmbeddingCacheStats();
+        log.info("Embedding缓存 - 大小: {}, 命中率: {:.2%} ({}/{}), 状态: {}",
+                embeddingStats.getSize(),
+                embeddingStats.getHitRate(),
+                embeddingStats.getHitCount(),
+                embeddingStats.getTotalRequests(),
+                embeddingStats.getStatus());
+
+        CacheStatsDTO.CacheDetailStats localSearchStats = stats.getLocalSearchCacheStats();
+        log.info("本地检索缓存 - 大小: {}, 命中率: {:.2%} ({}/{}), 状态: {}",
+                localSearchStats.getSize(),
+                localSearchStats.getHitRate(),
+                localSearchStats.getHitCount(),
+                localSearchStats.getTotalRequests(),
+                localSearchStats.getStatus());
+
+        CacheStatsDTO.RedisCacheStats redisStats = stats.getRedisCacheStats();
+        log.info("Redis缓存 - 连接状态: {}, 检索结果键: {}, 聊天响应键: {}",
+                redisStats.getConnected() ? "正常" : "异常",
+                redisStats.getSearchResultKeyCount(),
+                redisStats.getChatResponseKeyCount());
     }
 
     // ==================== 序列化/反序列化 ====================
