@@ -22,6 +22,20 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+    # Redis配置
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # password: redis123  # 如果Redis没有密码，请注释此行
+      database: 0
+      timeout: 5000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -68,19 +82,27 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
-  # Redis配置
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      # password: redis123  # 如果Redis没有密码，请注释此行
-      database: 0
-      timeout: 5000
-      lettuce:
-        pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 0
+
+
+# 检索配置
+retrieval:
+  multi-retrieve:
+    enabled: true
+    rrf-k: 60
+    vector-recall-multiplier: 2
+    full-text-recall-multiplier: 1
+  bm25:
+    enabled: true
+    k1: 1.2
+    b: 0.75
+    prefix-match: true
+    expand-synonyms: false
+    fuzzy-match: false
+    require-all-terms: false
+    use-normalization: true
+  vector:
+    similarity-threshold: 0.3
+    default-top-k: 10
 
 
 

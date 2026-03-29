@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Configuration;
 /**
  * 检索配置
  *
+ * 配置多路召回、BM25、向量检索等参数
+ *
  * @author SNRT
  * @since 1.0
  */
@@ -16,52 +18,98 @@ import org.springframework.context.annotation.Configuration;
 public class RetrievalConfig {
 
     /**
-     * 是否启用多路召回
+     * 多路召回配置
      */
-    private boolean multiRetrieveEnabled = true;
+    private MultiRetrieveConfig multiRetrieve = new MultiRetrieveConfig();
 
     /**
-     * 是否启用重排序
+     * BM25全文检索配置
      */
-    private boolean rerankEnabled = true;
+    private BM25Config bm25 = new BM25Config();
 
     /**
-     * 向量检索召回数量
+     * 向量检索配置
      */
-    private int vectorRecallCount = 20;
+    private VectorConfig vector = new VectorConfig();
 
-    /**
-     * 关键词检索召回数量
-     */
-    private int keywordRecallCount = 10;
+    @Data
+    public static class MultiRetrieveConfig {
+        /**
+         * 是否启用多路召回
+         */
+        private boolean enabled = true;
 
-    /**
-     * 最终返回结果数量
-     */
-    private int topK = 5;
+        /**
+         * RRF融合算法的k值
+         */
+        private int rrfK = 60;
 
-    /**
-     * RRF融合算法的k值
-     */
-    private int rrfK = 60;
+        /**
+         * 向量检索召回倍数
+         */
+        private int vectorRecallMultiplier = 2;
 
-    /**
-     * 相似度阈值
-     */
-    private double similarityThreshold = 0.5;
+        /**
+         * 全文检索召回倍数
+         */
+        private int fullTextRecallMultiplier = 1;
+    }
 
-    /**
-     * 是否启用全文检索
-     */
-    private boolean fullTextSearchEnabled = true;
+    @Data
+    public static class BM25Config {
+        /**
+         * 是否启用BM25全文检索
+         */
+        private boolean enabled = true;
 
-    /**
-     * 重排序模式：model（模型）/ rule（规则）
-     */
-    private String rerankMode = "rule";
+        /**
+         * 词频饱和度参数 (k1)
+         * 值越大，词频对评分的影响越大
+         */
+        private float k1 = 1.2f;
 
-    /**
-     * 模型重排序的最大候选数
-     */
-    private int modelRerankMaxCandidates = 10;
+        /**
+         * 文档长度归一化参数 (b)
+         * 0.0-1.0，0表示不归一化，1表示完全归一化
+         */
+        private float b = 0.75f;
+
+        /**
+         * 是否启用前缀匹配
+         */
+        private boolean prefixMatch = true;
+
+        /**
+         * 是否启用查询扩展（同义词）
+         */
+        private boolean expandSynonyms = false;
+
+        /**
+         * 是否启用模糊匹配
+         */
+        private boolean fuzzyMatch = false;
+
+        /**
+         * 是否要求所有查询词都匹配
+         */
+        private boolean requireAllTerms = false;
+
+        /**
+         * 是否使用文档长度归一化
+         */
+        private boolean useNormalization = true;
+    }
+
+    @Data
+    public static class VectorConfig {
+        /**
+         * 相似度阈值
+         */
+        private double similarityThreshold = 0.3;
+
+        /**
+         * 默认返回结果数
+         */
+        private int defaultTopK = 10;
+    }
 }

@@ -18,6 +18,15 @@ spring:
       ddl-auto: update
     show-sql: false
 
+  # Redis配置
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis123
+      database: 0
+      timeout: 5000
+
   ai:
     zhipuai:
       api-key: ${ZHIPUAI_API_KEY:2ed1fcc2d4cc4472811ecbbda85e2c07.Ryu8O8jAw14CZsta}
@@ -43,15 +52,6 @@ minio:
   access-key: minioadmin
   secret-key: minioadmin123
   bucket-name: knowledge-base
-
-  # Redis配置
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      password: redis123
-      database: 0
-      timeout: 5000
 
 logging:
   level:

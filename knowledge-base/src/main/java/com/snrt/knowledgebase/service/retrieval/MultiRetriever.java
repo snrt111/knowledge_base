@@ -13,9 +13,9 @@ import java.util.stream.Collectors;
 
 /**
  * 多路召回检索器
- * 
- * 实现向量检索 + 关键词检索的混合召回策略，提升检索覆盖率
- * 
+ *
+ * 实现向量检索 + BM25全文检索的混合召回策略，提升检索覆盖率
+ *
  * @author SNRT
  * @since 1.0
  */
@@ -24,16 +24,16 @@ import java.util.stream.Collectors;
 public class MultiRetriever {
 
     private final VectorStore vectorStore;
-    private final KeywordRetriever keywordRetriever;
+    private final FullTextRetriever fullTextRetriever;
 
-    public MultiRetriever(VectorStore vectorStore, KeywordRetriever keywordRetriever) {
+    public MultiRetriever(VectorStore vectorStore, FullTextRetriever fullTextRetriever) {
         this.vectorStore = vectorStore;
-        this.keywordRetriever = keywordRetriever;
+        this.fullTextRetriever = fullTextRetriever;
     }
 
     /**
      * 执行多路召回检索
-     * 
+     *
      * @param query 用户查询
      * @param knowledgeBaseId 知识库ID
      * @param topK 最终返回的结果数量
@@ -47,23 +47,23 @@ public class MultiRetriever {
             retrieveByVector(query, knowledgeBaseId, topK * 2)
         );
 
-        // 2. 关键词检索（精确匹配）
-        CompletableFuture<List<Document>> keywordFuture = CompletableFuture.supplyAsync(() ->
-            retrieveByKeyword(query, knowledgeBaseId, topK)
+        // 2. BM25全文检索（关键词匹配）
+        CompletableFuture<List<Document>> fullTextFuture = CompletableFuture.supplyAsync(() ->
+            retrieveByFullText(query, knowledgeBaseId, topK)
         );
 
         // 3. 合并结果
-        CompletableFuture.allOf(vectorFuture, keywordFuture).join();
+        CompletableFuture.allOf(vectorFuture, fullTextFuture).join();
 
         try {
             List<Document> vectorResults = vectorFuture.get();
-            List<Document> keywordResults = keywordFuture.get();
+            List<Document> fullTextResults = fullTextFuture.get();
 
-            log.info("[多路召回] 向量检索: {} 个, 关键词检索: {} 个", 
-                vectorResults.size(), keywordResults.size());
+            log.info("[多路召回] 向量检索: {} 个, BM25全文检索: {} 个",
+                vectorResults.size(), fullTextResults.size());
 
             // 4. 融合排序（RRF算法）
-            List<Document> fusedResults = reciprocalRankFusion(vectorResults, keywordResults, topK);
+            List<Document> fusedResults = reciprocalRankFusion(vectorResults, fullTextResults, topK);
 
             log.info("[多路召回] 融合后结果: {} 个", fusedResults.size());
             return fusedResults;
@@ -100,10 +100,10 @@ public class MultiRetriever {
     }
 
     /**
-     * 关键词检索
+     * BM25全文检索
      */
-    private List<Document> retrieveByKeyword(String query, String knowledgeBaseId, int topK) {
-        return keywordRetriever.search(query, knowledgeBaseId, topK);
+    private List<Document> retrieveByFullText(String query, String knowledgeBaseId, int topK) {
+        return fullTextRetriever.search(query, knowledgeBaseId, topK);
     }
 
     /**

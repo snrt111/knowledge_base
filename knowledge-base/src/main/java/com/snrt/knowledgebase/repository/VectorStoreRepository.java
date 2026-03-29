@@ -67,6 +67,59 @@ public interface VectorStoreRepository extends JpaRepository<VectorDocument, Lon
             @Param("limit") int limit);
 
     /**
+     * 使用 BM25 算法进行全文检索（带文档长度归一化）
+     *
+     * @param query 查询关键词（普通文本，会自动转换为tsquery）
+     * @param limit 返回结果数量
+     * @param normalizationMode 归一化模式 (0-32, 常用: 1=长度归一化, 2=唯一词数归一化, 8=词频归一化)
+     * @return 匹配的文档列表
+     */
+    @Query(value = """
+        SELECT
+            id,
+            content,
+            metadata,
+            embedding,
+            ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', :query), :normalizationMode) as rank
+        FROM vector_store
+        WHERE to_tsvector('simple', content) @@ plainto_tsquery('simple', :query)
+        ORDER BY rank DESC
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<VectorDocument> searchByBM25(
+            @Param("query") String query,
+            @Param("limit") int limit,
+            @Param("normalizationMode") int normalizationMode);
+
+    /**
+     * 使用 BM25 算法进行全文检索（带知识库过滤）
+     *
+     * @param query 查询关键词（普通文本，会自动转换为tsquery）
+     * @param knowledgeBaseId 知识库ID
+     * @param limit 返回结果数量
+     * @param normalizationMode 归一化模式 (0-32, 常用: 1=长度归一化, 2=唯一词数归一化, 8=词频归一化)
+     * @return 匹配的文档列表
+     */
+    @Query(value = """
+        SELECT
+            id,
+            content,
+            metadata,
+            embedding,
+            ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', :query), :normalizationMode) as rank
+        FROM vector_store
+        WHERE to_tsvector('simple', content) @@ plainto_tsquery('simple', :query)
+            AND metadata->>'knowledge_base_id' = :kbId
+        ORDER BY rank DESC
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<VectorDocument> searchByBM25AndKnowledgeBase(
+            @Param("query") String query,
+            @Param("kbId") String knowledgeBaseId,
+            @Param("limit") int limit,
+            @Param("normalizationMode") int normalizationMode);
+
+    /**
      * 检查全文检索是否可用
      *
      * @return 如果可用返回 true
