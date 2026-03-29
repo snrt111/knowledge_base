@@ -35,8 +35,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -51,6 +53,7 @@ public class ChatService {
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final RAGCacheManager ragCacheManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -236,7 +239,7 @@ public class ChatService {
     }
 
     /**
-     * 构建Prompt并提取文档来源信息
+     * 构建Prompt并提取文档来源信息（带完整缓存机制）
      *
      * @param message 用户消息
      * @param knowledgeBaseId 知识库ID
@@ -250,17 +253,32 @@ public class ChatService {
 
         log.info("[Prompt构建] 知识库ID: {}, 开始检索相关文档", knowledgeBaseId);
 
-        // 1. 向量检索：从向量数据库中检索相关文档
+        // 1. 尝试从缓存获取完整检索结果
+        Optional<RAGCacheManager.CachedSearchResult> cachedResult =
+                ragCacheManager.getCachedSearchResult(message, knowledgeBaseId);
+
+        if (cachedResult.isPresent()) {
+            log.info("[Prompt构建] 命中缓存，直接返回缓存结果");
+            List<Document> cachedDocs = cachedResult.get().getDocuments();
+            List<DocumentSourceDTO> cachedSources = cachedResult.get().getSources();
+            String prompt = buildSystemPrompt(cachedDocs, message);
+            return new PromptResult(prompt, cachedSources);
+        }
+
+        // 2. 向量检索：从向量数据库中检索相关文档
         List<Document> relevantDocs = retrieveRelevantDocuments(message);
-        
-        // 2. 文档过滤：根据知识库ID和相似度阈值过滤文档
+
+        // 3. 文档过滤：根据知识库ID和相似度阈值过滤文档
         List<Document> filteredDocs = filterDocumentsByRelevance(relevantDocs, knowledgeBaseId);
-        
-        // 3. 构建文档来源：将文档分组并构建DTO
+
+        // 4. 构建文档来源：将文档分组并构建DTO
         List<DocumentSourceDTO> documentSources = buildDocumentSources(filteredDocs);
-        
-        // 4. 构建Prompt：将文档内容组合成Prompt
+
+        // 5. 构建Prompt：将文档内容组合成Prompt
         String prompt = buildSystemPrompt(filteredDocs, message);
+
+        // 6. 缓存检索结果
+        ragCacheManager.cacheSearchResult(message, knowledgeBaseId, filteredDocs, documentSources);
 
         return new PromptResult(prompt, documentSources);
     }
@@ -281,18 +299,46 @@ public class ChatService {
     }
 
     /**
-     * 根据知识库ID和相似度过滤文档
+     * 根据知识库ID和相似度过滤文档（优化后：提高阈值+去重+限制数量）
      */
     private List<Document> filterDocumentsByRelevance(List<Document> docs, String knowledgeBaseId) {
-        final double SIMILARITY_THRESHOLD = 0.5;
-        
+        // 1. 按知识库和相似度过滤
         List<Document> filtered = docs.stream()
-                .filter(doc -> isDocumentRelevant(doc, knowledgeBaseId, SIMILARITY_THRESHOLD))
-                .limit(Constants.Chat.MAX_CONTEXT_LENGTH)
+                .filter(doc -> isDocumentRelevant(doc, knowledgeBaseId, Constants.Chat.SIMILARITY_THRESHOLD))
                 .collect(Collectors.toList());
-        
-        log.info("[Prompt构建] 过滤后剩余 {} 个文档", filtered.size());
-        return filtered;
+
+        // 2. 去重：相同文档只保留最相关的块
+        List<Document> deduplicated = deduplicateDocuments(filtered);
+
+        // 3. 限制最终数量
+        List<Document> limited = deduplicated.stream()
+                .limit(Constants.Chat.MAX_RETRIEVAL_RESULTS)
+                .collect(Collectors.toList());
+
+        log.info("[Prompt构建] 过滤后: 原始{}个 → 过滤后{}个 → 去重后{}个 → 最终{}个",
+                docs.size(), filtered.size(), deduplicated.size(), limited.size());
+        return limited;
+    }
+
+    /**
+     * 文档去重：相同文档ID只保留相似度最高的块
+     */
+    private List<Document> deduplicateDocuments(List<Document> docs) {
+        Map<String, Document> bestChunkByDoc = new HashMap<>();
+
+        for (Document doc : docs) {
+            String docId = getDocumentId(doc);
+            double similarity = calculateSimilarity(doc);
+
+            Document existing = bestChunkByDoc.get(docId);
+            if (existing == null || similarity > calculateSimilarity(existing)) {
+                bestChunkByDoc.put(docId, doc);
+            }
+        }
+
+        return bestChunkByDoc.values().stream()
+                .sorted(Comparator.comparingDouble(this::calculateSimilarity).reversed())
+                .collect(Collectors.toList());
     }
 
     /**
@@ -431,28 +477,54 @@ public class ChatService {
     }
 
     /**
-     * 构建系统Prompt
+     * 构建系统Prompt（优化后：结构化XML格式，减少Token消耗）
      */
     private String buildSystemPrompt(List<Document> docs, String message) {
         String context = docs.stream()
-                .map(Document::getText)
-                .collect(Collectors.joining("\n\n"));
+                .map(this::formatDocumentForPrompt)
+                .collect(Collectors.joining("\n"));
 
+        // 优化后的Prompt模板：使用XML标签，精简指令
+        // 注意：使用{{和}}来转义{和}，避免被Spring AI识别为变量
         String systemPrompt = """
-            你是一个专业的AI助手。请基于以下知识库内容回答用户问题。
-            如果知识库内容不足以回答问题，请明确告知用户。
-
-            知识库内容：
+            <role>知识库助手</role>
+            <rules>
+            1.仅基于<docs>内容回答
+            2.无相关信息时明确告知"根据现有资料无法回答"
+            3.回答准确、简洁、专业
+            4.引用来源使用[doc:文档ID]格式标注
+            </rules>
+            <docs>
             {context}
-
-            用户问题：{message}
+            </docs>
+            <question>{message}</question>
             """;
 
         SystemPromptTemplate template = new SystemPromptTemplate(systemPrompt);
         Prompt prompt = template.create(Map.of("context", context, "message", message));
-        
-        log.debug("[Prompt构建] 最终Prompt长度: {} 字符", prompt.getContents().length());
-        return prompt.getContents();
+
+        String finalPrompt = prompt.getContents();
+        log.info("[Prompt构建] ====== 完整提示词开始 ======");
+        log.info("[Prompt构建] {}", finalPrompt);
+        log.info("[Prompt构建] ====== 完整提示词结束 ======");
+        log.info("[Prompt构建] 最终Prompt长度: {} 字符", finalPrompt.length());
+        return finalPrompt;
+    }
+
+    /**
+     * 格式化文档用于Prompt（添加文档ID便于引用）
+     */
+    private String formatDocumentForPrompt(Document doc) {
+        String docId = getDocumentId(doc);
+        String docName = getMetadataString(doc, Constants.VectorStore.METADATA_DOCUMENT_NAME, "未知文档");
+        String text = doc.getText();
+
+        // 截断过长的文本
+        if (text.length() > Constants.Chat.MAX_SNIPPET_LENGTH) {
+            text = text.substring(0, Constants.Chat.MAX_SNIPPET_LENGTH) + "...";
+        }
+
+        return String.format("[doc:%s|%s]\n%s", docId, docName, text);
     }
 
     /**

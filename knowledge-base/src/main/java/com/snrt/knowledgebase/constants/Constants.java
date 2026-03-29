@@ -42,6 +42,16 @@ public final class Constants {
         public static final String DEFAULT_PROVIDER = "zhipuai";
         public static final String ZHIPU_AI_PROVIDER = "zhipuai";
         public static final String OLLAMA_PROVIDER = "ollama";
+
+        // Prompt优化配置
+        public static final double SIMILARITY_THRESHOLD = 0.5;
+        public static final int MAX_RETRIEVAL_RESULTS = 5;
+        public static final int MAX_SNIPPET_LENGTH = 300;
+
+        // 上下文压缩配置
+        public static final int SUMMARIZE_THRESHOLD = 6;
+        public static final int SUMMARY_MAX_LENGTH = 200;
+        public static final int KEEP_RECENT_MESSAGES = 2;
     }
 
     public static final class DocumentStatus {

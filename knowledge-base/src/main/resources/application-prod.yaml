@@ -44,6 +44,15 @@ minio:
   secret-key: ${MINIO_SECRET_KEY:minioadmin123}
   bucket-name: ${MINIO_BUCKET_NAME:knowledge-base}
 
+  # Redis配置
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis123}
+      database: ${REDIS_DATABASE:0}
+      timeout: 5000
+
 logging:
   level:
     com.snrt.knowledgebase: INFO
