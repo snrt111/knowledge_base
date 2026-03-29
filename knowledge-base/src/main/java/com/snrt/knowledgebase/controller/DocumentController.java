@@ -4,6 +4,8 @@ import com.snrt.knowledgebase.dto.ApiResponse;
 import com.snrt.knowledgebase.dto.DocumentDTO;
 import com.snrt.knowledgebase.dto.DocumentPreviewDTO;
 import com.snrt.knowledgebase.dto.PageResult;
+import com.snrt.knowledgebase.exception.DocumentException;
+import com.snrt.knowledgebase.service.DocumentPreviewService;
 import com.snrt.knowledgebase.service.DocumentService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ import java.util.List;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final DocumentPreviewService documentPreviewService;
 
     @GetMapping
     public ApiResponse<PageResult<DocumentDTO>> list(
@@ -58,46 +61,44 @@ public class DocumentController {
         return ApiResponse.success();
     }
 
+    /**
+     * 对已上传文档重新向量化并写入向量库（不重新上传文件）。
+     * 适用于首次处理失败或需在本地/MinIO 已有文件上重建索引的场景。
+     */
+    @PostMapping("/{id}/reprocess")
+    public ApiResponse<DocumentDTO> reprocess(@PathVariable String id) {
+        return ApiResponse.success(documentService.reprocessDocument(id));
+    }
+
     @GetMapping("/{id}/download")
     public void download(@PathVariable String id, HttpServletResponse response) {
-        try {
-            DocumentDTO doc = documentService.getDocument(id);
-            InputStream inputStream = documentService.downloadDocument(id);
-
+        DocumentDTO doc = documentService.getDocument(id);
+        try (InputStream inputStream = documentService.downloadDocument(id)) {
             response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
             String encodedFilename = URLEncoder.encode(doc.getName(), StandardCharsets.UTF_8)
-                    .replaceAll("\\+", "%20");
+                    .replace("+", "%20");
             response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
                     "attachment; filename=\"" + encodedFilename + "\"");
-
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                response.getOutputStream().write(buffer, 0, bytesRead);
-            }
-            inputStream.close();
+            inputStream.transferTo(response.getOutputStream());
             response.getOutputStream().flush();
-
             log.info("文档下载成功: id={}, name={}", id, doc.getName());
+        } catch (DocumentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("文档下载失败: id={}, error={}", id, e.getMessage(), e);
-            throw new RuntimeException("文档下载失败: " + e.getMessage());
+            throw DocumentException.fileReadError("文档下载失败: " + e.getMessage());
         }
     }
 
     @GetMapping("/{id}/url")
     public ApiResponse<String> getUrl(@PathVariable String id,
                                        @RequestParam(defaultValue = "24") int expiryHours) {
-        String url = documentService.getDocumentUrl(id, expiryHours);
-        if (url == null) {
-            return ApiResponse.error(404, "无法生成文件访问链接");
-        }
-        return ApiResponse.success(url);
+        return ApiResponse.success(documentService.getDocumentUrl(id, expiryHours));
     }
 
     @GetMapping("/{id}/preview")
     public ApiResponse<DocumentPreviewDTO> preview(@PathVariable String id) {
-        return ApiResponse.success(documentService.previewDocument(id));
+        return ApiResponse.success(documentPreviewService.previewDocument(id));
     }
 
 }

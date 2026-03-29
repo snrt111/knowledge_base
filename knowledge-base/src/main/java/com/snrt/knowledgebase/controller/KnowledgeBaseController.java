@@ -3,12 +3,14 @@ package com.snrt.knowledgebase.controller;
 import com.snrt.knowledgebase.dto.ApiResponse;
 import com.snrt.knowledgebase.dto.KnowledgeBaseDTO;
 import com.snrt.knowledgebase.dto.PageResult;
+import com.snrt.knowledgebase.dto.request.CreateKnowledgeBaseRequest;
+import com.snrt.knowledgebase.dto.request.UpdateKnowledgeBaseRequest;
 import com.snrt.knowledgebase.service.KnowledgeBaseService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/knowledge-base")
@@ -36,17 +38,13 @@ public class KnowledgeBaseController {
     }
 
     @PostMapping
-    public ApiResponse<KnowledgeBaseDTO> create(@RequestBody Map<String, String> request) {
-        String name = request.get("name");
-        String description = request.get("description");
-        return ApiResponse.success(knowledgeBaseService.createKnowledgeBase(name, description));
+    public ApiResponse<KnowledgeBaseDTO> create(@Valid @RequestBody CreateKnowledgeBaseRequest request) {
+        return ApiResponse.success(knowledgeBaseService.createKnowledgeBase(request.getName(), request.getDescription()));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<KnowledgeBaseDTO> update(@PathVariable String id, @RequestBody Map<String, String> request) {
-        String name = request.get("name");
-        String description = request.get("description");
-        return ApiResponse.success(knowledgeBaseService.updateKnowledgeBase(id, name, description));
+    public ApiResponse<KnowledgeBaseDTO> update(@PathVariable String id, @Valid @RequestBody UpdateKnowledgeBaseRequest request) {
+        return ApiResponse.success(knowledgeBaseService.updateKnowledgeBase(id, request.getName(), request.getDescription()));
     }
 
     @DeleteMapping("/{id}")

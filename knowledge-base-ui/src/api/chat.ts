@@ -1,54 +1,57 @@
-import axios from 'axios'
+import { http, unwrapData } from '@/api/http'
 import type { ChatSession, ChatMessage, PageResult, ChatResponse } from '@/types'
-
-const API_BASE = '/api/chat'
+import type { ApiResponse } from '@/types'
 
 export const chatApi = {
   sendMessage(message: string, sessionId?: string, knowledgeBaseId?: string): Promise<ChatResponse> {
-    return axios.post(API_BASE, {
-      message,
-      sessionId,
-      knowledgeBaseId,
-      stream: false
-    }).then(res => res.data.data)
+    return http
+      .post<ApiResponse<ChatResponse>>('/chat', {
+        message,
+        sessionId,
+        knowledgeBaseId,
+        stream: false
+      })
+      .then(unwrapData)
   },
 
   streamMessage(message: string, sessionId?: string, knowledgeBaseId?: string): {
-    eventSource: EventSource;
-    sessionId: string;
+    eventSource: EventSource
+    sessionId: string
   } {
     const params = new URLSearchParams()
     params.append('message', message)
     if (sessionId) params.append('sessionId', sessionId)
     if (knowledgeBaseId) params.append('knowledgeBaseId', knowledgeBaseId)
 
-    const eventSource = new EventSource(`${API_BASE}/stream?${params.toString()}`)
+    const eventSource = new EventSource(`/api/chat/stream?${params.toString()}`)
     return { eventSource, sessionId: sessionId || '' }
   },
 
   listSessions(page: number, size: number, keyword?: string): Promise<PageResult<ChatSession>> {
-    return axios.get(`${API_BASE}/sessions`, {
-      params: { page, size, keyword }
-    }).then(res => res.data.data)
+    return http
+      .get<ApiResponse<PageResult<ChatSession>>>('/chat/sessions', {
+        params: { page, size, keyword }
+      })
+      .then(unwrapData)
   },
 
   getSession(id: string): Promise<ChatSession> {
-    return axios.get(`${API_BASE}/sessions/${id}`).then(res => res.data.data)
+    return http.get<ApiResponse<ChatSession>>(`/chat/sessions/${id}`).then(unwrapData)
   },
 
   getSessionMessages(id: string): Promise<ChatMessage[]> {
-    return axios.get(`${API_BASE}/sessions/${id}/messages`).then(res => res.data.data)
+    return http.get<ApiResponse<ChatMessage[]>>(`/chat/sessions/${id}/messages`).then(unwrapData)
   },
 
   createSession(title?: string, knowledgeBaseId?: string): Promise<ChatSession> {
-    return axios.post(`${API_BASE}/sessions`, { title, knowledgeBaseId }).then(res => res.data.data)
+    return http.post<ApiResponse<ChatSession>>('/chat/sessions', { title, knowledgeBaseId }).then(unwrapData)
   },
 
   deleteSession(id: string): Promise<void> {
-    return axios.delete(`${API_BASE}/sessions/${id}`).then(res => res.data)
+    return http.delete<ApiResponse<null>>(`/chat/sessions/${id}`).then(() => {})
   },
 
   healthCheck(): Promise<void> {
-    return axios.get('/api/health').then(() => {})
+    return http.get<ApiResponse<Record<string, string>>>('/health').then(() => {})
   }
 }

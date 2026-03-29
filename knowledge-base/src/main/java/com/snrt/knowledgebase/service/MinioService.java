@@ -55,6 +55,25 @@ public class MinioService {
         }
     }
 
+    public String uploadFile(InputStream inputStream, String objectName, long size, String contentType) {
+        try {
+            createBucketIfNotExists();
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(objectName)
+                            .stream(inputStream, size, -1)
+                            .contentType(contentType != null ? contentType : "application/octet-stream")
+                            .build()
+            );
+            log.info("File '{}' uploaded successfully to bucket '{}'", objectName, bucketName);
+            return objectName;
+        } catch (Exception e) {
+            log.error("Error uploading file: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to upload file", e);
+        }
+    }
+
     public InputStream downloadFile(String objectName) {
         try {
             return minioClient.getObject(

@@ -221,6 +221,52 @@ npm run dev
 
 ## 配置说明
 
+### Ollama 安装与模型下载
+
+本项目默认通过 Ollama 在本地调用对话模型与 Embedding 模型。使用前请先安装 Ollama，并拉取与 `application.yaml` 中 `spring.ai.ollama` 配置一致的模型（默认：`deepseek-r1:1.5b`、`nomic-embed-text`）。
+
+#### 安装
+
+1. 前往 [Ollama 官网下载页](https://ollama.com/download)，按操作系统获取安装包或安装命令。
+
+```
+Ollama0.6.1.exe /DIR="D:\tools\ollama"
+```
+2. **Windows / macOS**：运行安装程序；安装完成后 Ollama 一般会作为后台服务运行（默认监听 `http://127.0.0.1:11434`）。
+3. **Linux**：可用官方一键脚本（需可访问 ollama.com）：
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+4. 在终端执行 `ollama --version`，确认已安装成功。
+
+#### 下载（拉取）模型
+
+在终端执行 `ollama pull <模型名>`，首次运行会从网络下载模型到本机。与本仓库默认配置对应的命令为：
+
+```bash
+ollama pull deepseek-r1:1.5b
+ollama pull nomic-embed-text
+```
+
+- **对话模型**（`spring.ai.ollama.chat.options.model`）：上例为 `deepseek-r1:1.5b`，可按机器配置替换为 [Ollama 模型库](https://ollama.com/library) 中其他名称，并同步修改 `application.yaml`。
+- **向量模型**（`spring.ai.ollama.embedding.options.model`）：须与 `spring.ai.vectorstore.pgvector.dimensions` 一致；当前默认 `nomic-embed-text` 为 **768** 维，若更换 Embedding 模型，请一并调整向量维度配置。
+
+查看已安装模型：
+
+```bash
+ollama list
+```
+
+快速验证对话是否正常：
+
+```bash
+ollama run deepseek-r1:1.5b "你好"
+```
+
+完成后确保本机 `http://localhost:11434` 可访问，并与下文 **Ollama 本地模型配置** 中的 `base-url` 一致。
+
 ### AI 模型配置
 
 系统支持两种 AI 模型配置方式，可在 `application-dev.yaml` 或 `application-prod.yaml` 中切换：

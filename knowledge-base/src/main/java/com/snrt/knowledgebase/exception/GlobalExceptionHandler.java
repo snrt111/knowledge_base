@@ -1,14 +1,20 @@
 package com.snrt.knowledgebase.exception;
 
 import com.snrt.knowledgebase.dto.ApiResponse;
+import com.snrt.knowledgebase.exception.impl.DefaultExceptionLogger;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
+
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -17,104 +23,147 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
+    private final DefaultExceptionLogger exceptionLogger;
+
     @ExceptionHandler(BusinessException.class)
-    public ApiResponse<Void> handleBusinessException(BusinessException e) {
-        log.warn("业务异常: [{}] {}", e.getErrorCode().getCode(), e.getMessage());
+    public ApiResponse<Void> handleBusinessException(BusinessException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, e);
         return ApiResponse.error(e.getErrorCode().getCode(), e.getMessage());
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ApiResponse<Void> handleResourceNotFoundException(ResourceNotFoundException e) {
-        log.warn("资源不存在: {}", e.getMessage());
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleResourceNotFoundException(ResourceNotFoundException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, e);
         return ApiResponse.error(e.getErrorCode().getCode(), e.getMessage());
     }
 
     @ExceptionHandler(ValidationException.class)
-    public ApiResponse<Void> handleValidationException(ValidationException e) {
-        log.warn("数据校验失败: {}", e.getMessage());
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleValidationException(ValidationException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, e);
         return ApiResponse.error(e.getErrorCode().getCode(), e.getMessage());
     }
 
     @ExceptionHandler(DocumentException.class)
-    public ApiResponse<Void> handleDocumentException(DocumentException e) {
-        log.warn("文档操作异常: [{}] {}", e.getErrorCode().getCode(), e.getMessage());
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleDocumentException(DocumentException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, e);
         return ApiResponse.error(e.getErrorCode().getCode(), e.getMessage());
     }
 
     @ExceptionHandler(ExternalServiceException.class)
-    public ApiResponse<Void> handleExternalServiceException(ExternalServiceException e) {
-        log.error("外部服务异常: {}", e.getMessage(), e);
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ApiResponse<Void> handleExternalServiceException(ExternalServiceException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logSystemException(context, e);
         return ApiResponse.error(e.getErrorCode().getCode(), e.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ApiResponse<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException e) {
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException e, HttpServletRequest request) {
         String message = e.getBindingResult().getFieldErrors().stream()
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining(", "));
-        log.warn("参数校验失败: {}", message);
+        ExceptionContext context = buildExceptionContext(request, e);
+        context.setParams(e.getBindingResult().getTarget());
+        exceptionLogger.logBusinessException(context, new BusinessException(ErrorCode.PARAM_ERROR, message));
         return ApiResponse.error(ErrorCode.PARAM_ERROR.getCode(), message);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    public ApiResponse<Void> handleConstraintViolationException(ConstraintViolationException e) {
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleConstraintViolationException(ConstraintViolationException e, HttpServletRequest request) {
         String message = e.getConstraintViolations().stream()
                 .map(ConstraintViolation::getMessage)
                 .collect(Collectors.joining(", "));
-        log.warn("约束校验失败: {}", message);
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, new BusinessException(ErrorCode.VALIDATION_ERROR, message));
         return ApiResponse.error(ErrorCode.VALIDATION_ERROR.getCode(), message);
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
-    public ApiResponse<Void> handleMissingServletRequestParameterException(MissingServletRequestParameterException e) {
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMissingServletRequestParameterException(MissingServletRequestParameterException e, HttpServletRequest request) {
         String message = "缺少必要参数: " + e.getParameterName();
-        log.warn(message);
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, new BusinessException(ErrorCode.PARAM_ERROR, message));
         return ApiResponse.error(ErrorCode.PARAM_ERROR.getCode(), message);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ApiResponse<Void> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e, HttpServletRequest request) {
         String message = String.format("参数类型错误: %s 应为 %s", e.getName(), e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "未知类型");
-        log.warn(message);
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, new BusinessException(ErrorCode.PARAM_ERROR, message));
         return ApiResponse.error(ErrorCode.PARAM_ERROR.getCode(), message);
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ApiResponse<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    public ApiResponse<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e, HttpServletRequest request) {
         String message = "文件大小超过限制";
-        log.warn(message);
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, new BusinessException(ErrorCode.FILE_TOO_LARGE, message));
         return ApiResponse.error(ErrorCode.FILE_TOO_LARGE.getCode(), message);
     }
 
     @ExceptionHandler(DataAccessException.class)
-    public ApiResponse<Void> handleDataAccessException(DataAccessException e) {
-        log.error("数据库访问异常", e);
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handleDataAccessException(DataAccessException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logSystemException(context, e);
         return ApiResponse.error(ErrorCode.SYSTEM_ERROR.getCode(), "数据库操作失败，请稍后重试");
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.warn("非法参数: {}", e.getMessage());
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, new BusinessException(ErrorCode.PARAM_ERROR, e.getMessage()));
         return ApiResponse.error(ErrorCode.PARAM_ERROR.getCode(), e.getMessage());
     }
 
     @ExceptionHandler(IllegalStateException.class)
-    public ApiResponse<Void> handleIllegalStateException(IllegalStateException e) {
-        log.warn("非法状态: {}", e.getMessage());
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handleIllegalStateException(IllegalStateException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logSystemException(context, e);
         return ApiResponse.error(ErrorCode.SYSTEM_ERROR.getCode(), e.getMessage());
     }
 
     @ExceptionHandler(RuntimeException.class)
-    public ApiResponse<Void> handleRuntimeException(RuntimeException e) {
-        log.error("运行时异常: ", e);
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handleRuntimeException(RuntimeException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logSystemException(context, e);
         return ApiResponse.error(ErrorCode.SYSTEM_ERROR.getCode(), "系统错误，请稍后重试");
     }
 
     @ExceptionHandler(Exception.class)
-    public ApiResponse<Void> handleException(Exception e) {
-        log.error("系统异常: ", e);
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handleException(Exception e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logSystemException(context, e);
         return ApiResponse.error(ErrorCode.SYSTEM_ERROR.getCode(), "系统错误，请稍后重试");
+    }
+
+    private ExceptionContext buildExceptionContext(HttpServletRequest request, Throwable throwable) {
+        return ExceptionContext.builder()
+                .traceId(request.getAttribute("traceId") != null ? request.getAttribute("traceId").toString() : "")
+                .path(request.getRequestURI())
+                .method(request.getMethod())
+                .exceptionType(throwable.getClass().getSimpleName())
+                .message(throwable.getMessage())
+                .build();
     }
 }

@@ -45,4 +45,11 @@ public enum PreviewType {
     public boolean isPreviewable() {
         return this != UNSUPPORTED;
     }
+
+    /**
+     * 需由前端 @js-preview 等库通过下载 URL 拉取二进制后再渲染（非服务端抽取纯文本）。
+     */
+    public boolean requiresClientDownloadForRendering() {
+        return this == PDF || this == WORD || this == EXCEL || this == PPT;
+    }
 }

@@ -18,13 +18,17 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     Page<Document> findByKnowledgeBaseIdAndIsDeletedFalse(String knowledgeBaseId, Pageable pageable);
 
-    @Query("SELECT d FROM Document d WHERE d.isDeleted = false AND d.knowledgeBase.id = :kbId AND d.name LIKE %:keyword%")
+    @Query("SELECT d FROM Document d WHERE d.isDeleted = false AND d.knowledgeBase.id = :kbId "
+            + "AND LOWER(d.name) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     Page<Document> findByKnowledgeBaseIdAndNameContainingAndIsDeletedFalse(
             @Param("kbId") String knowledgeBaseId,
             @Param("keyword") String keyword,
             Pageable pageable);
 
     Optional<Document> findByIdAndIsDeletedFalse(String id);
+
+    @Query("SELECT d FROM Document d JOIN FETCH d.knowledgeBase WHERE d.id = :id AND d.isDeleted = false")
+    Optional<Document> findByIdAndIsDeletedFalseWithKnowledgeBase(@Param("id") String id);
 
     List<Document> findByKnowledgeBaseIdAndIsDeletedFalse(String knowledgeBaseId);
 

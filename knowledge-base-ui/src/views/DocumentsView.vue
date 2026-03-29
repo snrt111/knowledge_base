@@ -62,11 +62,25 @@
             {{ formatFileSize(row.size) }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">
-              {{ getStatusText(row.status) }}
-            </el-tag>
+            <div class="status-cell">
+              <el-tag :type="getDocumentStatusTag(row.status)">
+                {{ getDocumentStatusLabel(row.status) }}
+              </el-tag>
+              <el-button
+                v-if="row.status !== 'completed'"
+                type="warning"
+                link
+                size="small"
+                :loading="reprocessingId === row.id"
+                :disabled="reprocessingId !== null && reprocessingId !== row.id"
+                @click="handleReprocess(row)"
+                title="重新向量化"
+              >
+                <el-icon><RefreshRight /></el-icon>
+              </el-button>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="uploadTime" label="上传时间" width="180">
@@ -76,18 +90,20 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handlePreview(row)">
-              <el-icon><View /></el-icon>
-              预览
-            </el-button>
-            <el-button type="primary" link @click="handleDownload(row)">
-              <el-icon><Download /></el-icon>
-              下载
-            </el-button>
-            <el-button type="danger" link @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-              删除
-            </el-button>
+            <div class="operation-buttons">
+              <el-button type="primary" link @click="handlePreview(row)">
+                <el-icon><View /></el-icon>
+                预览
+              </el-button>
+              <el-button type="primary" link @click="handleDownload(row)">
+                <el-icon><Download /></el-icon>
+                下载
+              </el-button>
+              <el-button type="danger" link @click="handleDelete(row)">
+                <el-icon><Delete /></el-icon>
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -178,7 +194,7 @@
             <el-descriptions-item label="上传时间">{{ formatDateTime(previewDialog.data?.uploadTime) }}</el-descriptions-item>
             <el-descriptions-item label="预览类型">
               <el-tag :type="getPreviewTypeTag(previewDialog.data?.previewType)">
-                {{ getPreviewTypeText(previewDialog.data?.previewType) }}
+                {{ getPreviewTypeLabel(previewDialog.data?.previewType) }}
               </el-tag>
             </el-descriptions-item>
           </el-descriptions>
@@ -201,34 +217,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile, UploadFiles } from 'element-plus'
-import { useRoute } from 'vue-router'
 import { documentApi } from '@/api/document'
-import { knowledgeBaseApi } from '@/api/knowledgeBase'
 import DocumentViewer from '@/components/DocumentViewer.vue'
-import type { Document, DocumentPreview, KnowledgeBase } from '@/types'
+import { useDocumentsPage } from '@/composables/useDocumentsPage'
+import type { Document, DocumentPreview } from '@/types'
 import { formatDateTime } from '@/utils/date'
+import {
+  formatFileSize,
+  getDocumentStatusLabel,
+  getDocumentStatusTag,
+  getFileIconColor,
+  getFileTypeTag,
+  getPreviewTypeLabel,
+  getPreviewTypeTag
+} from '@/utils/documentDisplay'
 
-const route = useRoute()
-const loading = ref(false)
+const {
+  loading,
+  knowledgeBases,
+  searchForm,
+  documents,
+  page,
+  fetchDocuments,
+  handleSearch,
+  handleReset,
+  handleSizeChange,
+  handleCurrentChange
+} = useDocumentsPage()
+
+const reprocessingId = ref<string | null>(null)
 const uploadRef = ref()
-
-const knowledgeBases = ref<KnowledgeBase[]>([])
-
-const searchForm = reactive({
-  knowledgeBaseId: route.query.knowledgeBaseId as string || '',
-  keyword: ''
-})
-
-const documents = ref<Document[]>([])
-
-const page = reactive({
-  current: 1,
-  size: 10,
-  total: 0
-})
 
 const uploadDialog = reactive({
   visible: false,
@@ -246,99 +267,6 @@ const previewDialog = reactive({
   data: null as DocumentPreview | null,
   currentDoc: null as Document | null
 })
-
-const fetchKnowledgeBases = async () => {
-  try {
-    knowledgeBases.value = await knowledgeBaseApi.listAll()
-  } catch (error) {
-    ElMessage.error('获取知识库列表失败')
-  }
-}
-
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const res = await documentApi.list(
-      page.current,
-      page.size,
-      searchForm.knowledgeBaseId || undefined,
-      searchForm.keyword || undefined
-    )
-    documents.value = res.list
-    page.total = res.total
-  } catch (error) {
-    ElMessage.error('获取文档列表失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-const getFileIconColor = (type: string) => {
-  const colors: Record<string, string> = {
-    pdf: '#FF6B6B',
-    doc: '#409EFF',
-    docx: '#409EFF',
-    xls: '#67C23A',
-    xlsx: '#67C23A',
-    ppt: '#E6A23C',
-    pptx: '#E6A23C',
-    txt: '#909399',
-    md: '#409EFF'
-  }
-  return colors[type] || '#909399'
-}
-
-const getFileTypeTag = (type: string) => {
-  const types: Record<string, any> = {
-    pdf: 'danger',
-    doc: 'primary',
-    docx: 'primary',
-    xls: 'success',
-    xlsx: 'success',
-    ppt: 'warning',
-    pptx: 'warning',
-    txt: 'info',
-    md: 'primary'
-  }
-  return types[type] || 'info'
-}
-
-const formatFileSize = (bytes: number) => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-const getStatusType = (status: string) => {
-  const types: Record<string, any> = {
-    processing: 'warning',
-    completed: 'success',
-    failed: 'danger'
-  }
-  return types[status]
-}
-
-const getStatusText = (status: string) => {
-  const texts: Record<string, string> = {
-    processing: '处理中',
-    completed: '已完成',
-    failed: '失败'
-  }
-  return texts[status]
-}
-
-const handleSearch = () => {
-  page.current = 1
-  fetchData()
-}
-
-const handleReset = () => {
-  searchForm.knowledgeBaseId = ''
-  searchForm.keyword = ''
-  handleSearch()
-}
 
 const showUploadDialog = () => {
   uploadForm.knowledgeBaseId = searchForm.knowledgeBaseId || ''
@@ -373,7 +301,7 @@ const handleUpload = async () => {
     }
     ElMessage.success(`成功上传 ${uploadForm.fileList.length} 个文件`)
     uploadDialog.visible = false
-    fetchData()
+    fetchDocuments()
   } catch (error) {
     ElMessage.error('上传失败')
   } finally {
@@ -397,6 +325,28 @@ const handlePreview = async (row: Document) => {
   }
 }
 
+const handleReprocess = async (row: Document) => {
+  try {
+    await ElMessageBox.confirm(
+      `将对「${row.name}」使用已保存的文件重新向量化并覆盖原有向量片段，是否继续？`,
+      '重新向量化',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
+    )
+  } catch {
+    return
+  }
+  reprocessingId.value = row.id
+  try {
+    await documentApi.reprocess(row.id)
+    ElMessage.success('已提交重新向量化，请稍后刷新查看状态')
+    await fetchDocuments()
+  } catch (error) {
+    ElMessage.error('提交失败，请稍后重试')
+  } finally {
+    reprocessingId.value = null
+  }
+}
+
 const handleDownload = (row: Document) => {
   const url = documentApi.download(row.id)
   const link = document.createElement('a')
@@ -414,30 +364,6 @@ const handleDownloadFromPreview = () => {
   }
 }
 
-const getPreviewTypeTag = (type?: string) => {
-  const tags: Record<string, any> = {
-    text: 'success',
-    pdf: 'warning',
-    word: 'primary',
-    excel: 'success',
-    ppt: 'danger',
-    unsupported: 'info'
-  }
-  return tags[type || ''] || 'info'
-}
-
-const getPreviewTypeText = (type?: string) => {
-  const texts: Record<string, string> = {
-    text: '文本预览',
-    pdf: 'PDF预览',
-    word: 'Word文档',
-    excel: 'Excel文档',
-    ppt: 'PPT文档',
-    unsupported: '不支持预览'
-  }
-  return texts[type || ''] || '未知'
-}
-
 const handleDelete = (row: Document) => {
   ElMessageBox.confirm(
     `确定要删除文档 "${row.name}" 吗？`,
@@ -451,27 +377,13 @@ const handleDelete = (row: Document) => {
     try {
       await documentApi.delete(row.id)
       ElMessage.success('删除成功')
-      fetchData()
+      fetchDocuments()
     } catch (error) {
       ElMessage.error('删除失败')
     }
   })
 }
 
-const handleSizeChange = (val: number) => {
-  page.size = val
-  fetchData()
-}
-
-const handleCurrentChange = (val: number) => {
-  page.current = val
-  fetchData()
-}
-
-onMounted(() => {
-  fetchKnowledgeBases()
-  fetchData()
-})
 </script>
 
 <style scoped>
@@ -501,6 +413,24 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.operation-buttons {
+  display: flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  gap: 4px;
+}
+
+.operation-buttons .el-button {
+  padding: 4px 8px;
+  font-size: 13px;
 }
 
 .pagination {

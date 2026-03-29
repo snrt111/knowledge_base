@@ -1,32 +1,33 @@
-import axios from 'axios'
+import { http, unwrapData } from '@/api/http'
 import type { KnowledgeBase, PageResult } from '@/types'
-
-const API_BASE = '/api'
+import type { ApiResponse } from '@/types'
 
 export const knowledgeBaseApi = {
   list(page: number, size: number, keyword?: string): Promise<PageResult<KnowledgeBase>> {
-    return axios.get(`${API_BASE}/knowledge-base`, {
-      params: { page, size, keyword }
-    }).then(res => res.data.data)
+    return http
+      .get<ApiResponse<PageResult<KnowledgeBase>>>('/knowledge-base', {
+        params: { page, size, keyword }
+      })
+      .then(unwrapData)
   },
 
   listAll(): Promise<KnowledgeBase[]> {
-    return axios.get(`${API_BASE}/knowledge-base/all`).then(res => res.data.data)
+    return http.get<ApiResponse<KnowledgeBase[]>>('/knowledge-base/all').then(unwrapData)
   },
 
   getById(id: string): Promise<KnowledgeBase> {
-    return axios.get(`${API_BASE}/knowledge-base/${id}`).then(res => res.data.data)
+    return http.get<ApiResponse<KnowledgeBase>>(`/knowledge-base/${id}`).then(unwrapData)
   },
 
   create(data: { name: string; description?: string }): Promise<KnowledgeBase> {
-    return axios.post(`${API_BASE}/knowledge-base`, data).then(res => res.data.data)
+    return http.post<ApiResponse<KnowledgeBase>>('/knowledge-base', data).then(unwrapData)
   },
 
   update(id: string, data: { name: string; description?: string }): Promise<KnowledgeBase> {
-    return axios.put(`${API_BASE}/knowledge-base/${id}`, data).then(res => res.data.data)
+    return http.put<ApiResponse<KnowledgeBase>>(`/knowledge-base/${id}`, data).then(unwrapData)
   },
 
   delete(id: string): Promise<void> {
-    return axios.delete(`${API_BASE}/knowledge-base/${id}`).then(res => res.data)
+    return http.delete<ApiResponse<null>>(`/knowledge-base/${id}`).then(() => {})
   }
 }

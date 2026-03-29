@@ -3,7 +3,9 @@ package com.snrt.knowledgebase.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.snrt.knowledgebase.dto.*;
+import com.snrt.knowledgebase.dto.request.CreateChatSessionRequest;
 import com.snrt.knowledgebase.service.ChatService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -11,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @RestController
@@ -41,10 +42,8 @@ public class ChatController {
     }
 
     @PostMapping("/sessions")
-    public ApiResponse<ChatSessionDTO> createSession(@RequestBody Map<String, String> request) {
-        String title = request.get("title");
-        String knowledgeBaseId = request.get("knowledgeBaseId");
-        return ApiResponse.success(chatService.createSession(title, knowledgeBaseId));
+    public ApiResponse<ChatSessionDTO> createSession(@Valid @RequestBody CreateChatSessionRequest request) {
+        return ApiResponse.success(chatService.createSession(request.getTitle(), request.getKnowledgeBaseId()));
     }
 
     @DeleteMapping("/sessions/{id}")
@@ -54,7 +53,7 @@ public class ChatController {
     }
 
     @PostMapping
-    public ApiResponse<ChatResponseDTO> chat(@RequestBody ChatRequest request) {
+    public ApiResponse<ChatResponseDTO> chat(@Valid @RequestBody ChatRequest request) {
         return ApiResponse.success(chatService.chat(request));
     }
 
@@ -67,6 +66,7 @@ public class ChatController {
         request.setMessage(message);
         request.setSessionId(sessionId);
         request.setKnowledgeBaseId(knowledgeBaseId);
+        request.setStream(true);
 
         return chatService.streamChat(request)
                 .map(response -> {

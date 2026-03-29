@@ -41,4 +41,8 @@ public class DocumentException extends BusinessException {
     public static DocumentException fileReadError(String message) {
         return new DocumentException(ErrorCode.FILE_READ_ERROR, message);
     }
+
+    public static DocumentException reprocessNotAllowed(String message) {
+        return new DocumentException(ErrorCode.DOCUMENT_REPROCESS_NOT_ALLOWED, message);
+    }
 }

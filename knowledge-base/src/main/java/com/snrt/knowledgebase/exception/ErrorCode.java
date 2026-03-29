@@ -22,6 +22,7 @@ public enum ErrorCode {
     UNSUPPORTED_FILE_TYPE(3003, "不支持的文件类型: {0}"),
     FILE_TOO_LARGE(3004, "文件大小超过限制: {0}"),
     FILE_READ_ERROR(3005, "文件读取失败: {0}"),
+    DOCUMENT_REPROCESS_NOT_ALLOWED(3006, "{0}"),
 
     KNOWLEDGE_BASE_NOT_FOUND(4000, "知识库不存在: {0}"),
     KNOWLEDGE_BASE_ALREADY_EXISTS(4001, "知识库已存在: {0}"),
