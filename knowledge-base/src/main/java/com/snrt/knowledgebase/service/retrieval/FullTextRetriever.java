@@ -98,8 +98,10 @@ public class FullTextRetriever {
                 );
             }
 
-            // 4. 转换为 Document 并添加 BM25 分数
+            // 4. 过滤匹配度低于50%的结果，并转换为 Document
+            double minScore = 0.5;
             List<Document> documents = results.stream()
+                    .filter(doc -> doc.getRank() != null && doc.getRank() >= minScore)
                     .map(this::convertToDocument)
                     .collect(Collectors.toList());
 
@@ -108,7 +110,7 @@ public class FullTextRetriever {
                 documents = applyFuzzyMatch(documents, query, topK);
             }
 
-            log.info("[BM25全文检索] 查询: '{}', 返回 {} 个结果", query, documents.size());
+            log.info("[BM25全文检索] 查询: '{}', 匹配度>=50%的结果: {} 个", query, documents.size());
             return documents;
 
         } catch (Exception e) {

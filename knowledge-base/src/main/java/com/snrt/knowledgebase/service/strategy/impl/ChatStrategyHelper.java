@@ -229,8 +229,12 @@ public class ChatStrategyHelper {
         Map<String, List<Document>> docsById = documents.stream()
                 .collect(Collectors.groupingBy(this::getDocumentId));
 
+        // 最小分数阈值 (50%)
+        double minScoreThreshold = 0.5;
+
         return docsById.entrySet().stream()
                 .map(entry -> createDocumentSource(entry.getKey(), entry.getValue()))
+                .filter(source -> source.getScore() != null && source.getScore() >= minScoreThreshold)
                 .sorted((s1, s2) -> {
                     Double score1 = s1.getScore();
                     Double score2 = s2.getScore();

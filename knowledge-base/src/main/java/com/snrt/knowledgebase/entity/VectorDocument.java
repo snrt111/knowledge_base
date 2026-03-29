@@ -35,6 +35,9 @@ public class VectorDocument {
     @Column(name = "embedding", columnDefinition = "vector(768)")
     private float[] embedding;
 
+    @Transient
+    private Double rank;
+
     /**
      * 获取文档ID
      */
