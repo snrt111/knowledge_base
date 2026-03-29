@@ -7,6 +7,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -29,22 +30,36 @@ public class ConversationSummarizer {
      * 压缩对话历史
      * 当历史消息超过阈值时，使用轻量级模型生成摘要
      *
-     * @param messages 原始消息列表
-     * @return 压缩后的上下文字符串
+     * @param messages 原始消息列表（包含当前用户消息）
+     * @return 压缩后的上下文字符串，如果消息数量较少则返回空字符串
      */
     public String compressContext(List<ChatMessage> messages) {
-        if (messages == null || messages.size() <= SUMMARIZE_THRESHOLD) {
-            return formatMessages(messages);
+        if (messages == null || messages.isEmpty()) {
+            return "";
         }
 
-        log.info("[上下文压缩] 消息数: {}, 触发摘要生成", messages.size());
+        // 排除最后一条消息（当前用户消息），只处理历史消息
+        List<ChatMessage> historyMessages = messages.size() > 1
+                ? messages.subList(0, messages.size() - 1)
+                : new ArrayList<>();
+
+        if (historyMessages.isEmpty()) {
+            return "";
+        }
+
+        // 消息数量较少时，直接格式化返回
+        if (historyMessages.size() <= SUMMARIZE_THRESHOLD) {
+            return formatMessages(historyMessages);
+        }
+
+        log.info("[上下文压缩] 历史消息数: {}, 触发摘要生成", historyMessages.size());
 
         // 1. 早期消息生成摘要
-        List<ChatMessage> earlyMessages = messages.subList(0, messages.size() - KEEP_RECENT_MESSAGES);
+        List<ChatMessage> earlyMessages = historyMessages.subList(0, historyMessages.size() - KEEP_RECENT_MESSAGES);
         String summary = generateSummary(earlyMessages);
 
         // 2. 保留最近N轮完整对话
-        List<ChatMessage> recentMessages = messages.subList(messages.size() - KEEP_RECENT_MESSAGES, messages.size());
+        List<ChatMessage> recentMessages = historyMessages.subList(historyMessages.size() - KEEP_RECENT_MESSAGES, historyMessages.size());
         String recentContext = formatMessages(recentMessages);
 
         String result = String.format("""
@@ -140,6 +155,11 @@ public class ConversationSummarizer {
      * 检查是否需要压缩
      */
     public boolean needCompression(List<ChatMessage> messages) {
-        return messages != null && messages.size() > SUMMARIZE_THRESHOLD;
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+        // 排除当前用户消息，只计算历史消息数量
+        int historyCount = messages.size() > 1 ? messages.size() - 1 : 0;
+        return historyCount > SUMMARIZE_THRESHOLD;
     }
 }

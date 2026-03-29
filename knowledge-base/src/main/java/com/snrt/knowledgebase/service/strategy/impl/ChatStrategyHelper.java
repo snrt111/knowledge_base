@@ -13,6 +13,7 @@ import com.snrt.knowledgebase.model.ChatModelFactory;
 import com.snrt.knowledgebase.repository.ChatMessageRepository;
 import com.snrt.knowledgebase.repository.ChatSessionRepository;
 import com.snrt.knowledgebase.repository.KnowledgeBaseRepository;
+import com.snrt.knowledgebase.service.ConversationSummarizer;
 import com.snrt.knowledgebase.service.RAGCacheManager;
 import com.snrt.knowledgebase.util.LogUtils;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,7 @@ public class ChatStrategyHelper {
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final RAGCacheManager ragCacheManager;
+    private final ConversationSummarizer conversationSummarizer;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ChatResponseDTO executeChat(ChatRequest request) {
@@ -56,7 +58,15 @@ public class ChatStrategyHelper {
         saveMessage(session.getId(), ChatMessage.MessageRole.USER, request.getMessage(), null);
 
         String knowledgeBaseId = session.getKnowledgeBase() != null ? session.getKnowledgeBase().getId() : null;
-        PromptResult promptResult = buildPromptWithSources(request.getMessage(), knowledgeBaseId);
+
+        // 获取并压缩历史消息上下文
+        List<ChatMessage> historyMessages = messageRepository.findBySessionIdOrderByCreateTimeAsc(session.getId());
+        String compressedContext = conversationSummarizer.compressContext(historyMessages);
+        log.info("[{}] [上下文压缩] 会话ID: {}, 原始消息数: {}, 压缩后长度: {} 字符, 是否压缩: {}",
+                traceId, session.getId(), historyMessages.size(), compressedContext.length(),
+                conversationSummarizer.needCompression(historyMessages));
+
+        PromptResult promptResult = buildPromptWithSources(request.getMessage(), knowledgeBaseId, compressedContext);
         log.debug("[{}] [大模型处理] 会话ID: {}, 构建的Prompt长度: {} 字符",
                 traceId, session.getId(), promptResult.getPrompt().length());
 
@@ -89,7 +99,15 @@ public class ChatStrategyHelper {
         saveMessage(session.getId(), ChatMessage.MessageRole.USER, request.getMessage(), null);
 
         String knowledgeBaseId = session.getKnowledgeBase() != null ? session.getKnowledgeBase().getId() : null;
-        PromptResult promptResult = buildPromptWithSources(request.getMessage(), knowledgeBaseId);
+
+        // 获取并压缩历史消息上下文
+        List<ChatMessage> historyMessages = messageRepository.findBySessionIdOrderByCreateTimeAsc(session.getId());
+        String compressedContext = conversationSummarizer.compressContext(historyMessages);
+        log.info("[{}] [上下文压缩] 会话ID: {}, 原始消息数: {}, 压缩后长度: {} 字符, 是否压缩: {}",
+                traceId, session.getId(), historyMessages.size(), compressedContext.length(),
+                conversationSummarizer.needCompression(historyMessages));
+
+        PromptResult promptResult = buildPromptWithSources(request.getMessage(), knowledgeBaseId, compressedContext);
         log.debug("[{}] [大模型流式处理] 会话ID: {}, 构建的Prompt长度: {} 字符",
                 traceId, session.getId(), promptResult.getPrompt().length());
 
@@ -151,10 +169,12 @@ public class ChatStrategyHelper {
         return sessionRepository.save(session);
     }
 
-    private PromptResult buildPromptWithSources(String message, String knowledgeBaseId) {
+    private PromptResult buildPromptWithSources(String message, String knowledgeBaseId, String compressedContext) {
         if (knowledgeBaseId == null) {
             log.debug("[Prompt构建] 未指定知识库，直接返回用户消息");
-            return new PromptResult(message, null);
+            // 即使没有知识库，也使用压缩后的上下文
+            String prompt = buildSystemPrompt(null, message, compressedContext);
+            return new PromptResult(prompt, null);
         }
 
         log.info("[Prompt构建] 知识库ID: {}, 开始检索相关文档", knowledgeBaseId);
@@ -166,14 +186,14 @@ public class ChatStrategyHelper {
             log.info("[Prompt构建] 命中缓存，直接返回缓存结果");
             List<Document> cachedDocs = cachedResult.get().getDocuments();
             List<DocumentSourceDTO> cachedSources = cachedResult.get().getSources();
-            String prompt = buildSystemPrompt(cachedDocs, message);
+            String prompt = buildSystemPrompt(cachedDocs, message, compressedContext);
             return new PromptResult(prompt, cachedSources);
         }
 
         List<Document> relevantDocs = retrieveRelevantDocuments(message);
         List<Document> filteredDocs = filterDocumentsByRelevance(relevantDocs, knowledgeBaseId);
         List<DocumentSourceDTO> documentSources = buildDocumentSources(filteredDocs);
-        String prompt = buildSystemPrompt(filteredDocs, message);
+        String prompt = buildSystemPrompt(filteredDocs, message, compressedContext);
 
         ragCacheManager.cacheSearchResult(message, knowledgeBaseId, filteredDocs, documentSources);
 
@@ -328,21 +348,34 @@ public class ChatStrategyHelper {
                 .collect(Collectors.toList());
     }
 
-    private String buildSystemPrompt(List<Document> documents, String userMessage) {
-        if (documents == null || documents.isEmpty()) {
-            return userMessage;
+    private String buildSystemPrompt(List<Document> documents, String userMessage, String compressedContext) {
+        StringBuilder prompt = new StringBuilder();
+
+        // 添加系统角色定义
+        prompt.append("你是一个专业的知识库助手。请基于提供的参考文档和对话历史回答用户问题。\n\n");
+
+        // 添加压缩后的对话历史（如果有）
+        if (compressedContext != null && !compressedContext.isEmpty()) {
+            prompt.append("=== 对话历史 ===\n");
+            prompt.append(compressedContext);
+            prompt.append("\n\n");
         }
 
-        StringBuilder context = new StringBuilder();
-        context.append("基于以下文档内容回答用户问题：\n\n");
-
-        for (int i = 0; i < documents.size(); i++) {
-            Document doc = documents.get(i);
-            context.append(String.format("[文档%d] %s\n", i + 1, doc.getText()));
+        // 添加检索到的文档内容（如果有）
+        if (documents != null && !documents.isEmpty()) {
+            prompt.append("=== 参考文档 ===\n");
+            for (int i = 0; i < documents.size(); i++) {
+                Document doc = documents.get(i);
+                prompt.append(String.format("[文档%d] %s\n", i + 1, doc.getText()));
+            }
+            prompt.append("\n");
         }
 
-        context.append("\n用户问题：").append(userMessage);
-        return context.toString();
+        // 添加用户当前问题
+        prompt.append("=== 当前问题 ===\n");
+        prompt.append(userMessage);
+
+        return prompt.toString();
     }
 
     private void saveMessage(String sessionId, ChatMessage.MessageRole role, String content, String sources) {
