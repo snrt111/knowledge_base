@@ -100,11 +100,41 @@ minio:
   secret-key: minioadmin123
   bucket-name: knowledge-base
 
+# springdoc-openapi 基础配置
 springdoc:
-  api-docs:
-    path: /api-docs
   swagger-ui:
-    path: /swagger-ui.html
+    path: /swagger-ui.html       # 访问路径
+    enabled: true
+    operations-sorter: order     # 按 Knife4j 增强排序
+    tags-sorter: alpha           # 标签按字母排序
+    disable-swagger-default-url: true
+    doc-expansion: none          # 默认折叠标签列表（none/list/full）
+    default-models-expand-depth: 1  # 默认展开模型深度
+    display-request-duration: true  # 显示请求耗时
+    filter: true                    # 开启接口搜索过滤
+    show-extensions: true           # 显示扩展信息
+  api-docs:
+    path: /v3/api-docs           # 文档接口地址
+    enabled: true
+  default-flat-param-object: true # GET 多参数自动展开（避免参数接收问题）
+# Knife4j 增强配置
+knife4j:
+  enable: true                   # 开启增强（必须）
+  setting:
+    language: zh-CN              # 中文界面
+    enable-swagger-models: false  # 显示数据模型
+    enable-debug: true           # 开启在线调试
+    enable-document-manage: false # 开启文档管理
+    enable-reload-cache: true    # 开启缓存刷新
+    enable-filter-multipart-api: true  # 过滤 multipart/form-data 类型
+    enable-dynamic-parameter: true     # 开启动态参数调试
+    enable-host: false                 # 禁用默认 host 显示
+    enable-host-text: false            # 禁用 host 文本显示
+  # 生产环境建议开启 Basic 认证
+  basic:
+    enable: false
+    username: admin
+    password: 123456
 
 
 

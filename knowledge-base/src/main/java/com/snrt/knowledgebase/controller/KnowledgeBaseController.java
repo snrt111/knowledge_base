@@ -6,12 +6,14 @@ import com.snrt.knowledgebase.dto.PageResult;
 import com.snrt.knowledgebase.dto.request.CreateKnowledgeBaseRequest;
 import com.snrt.knowledgebase.dto.request.UpdateKnowledgeBaseRequest;
 import com.snrt.knowledgebase.service.KnowledgeBaseService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@Tag(name = "知识库管理", description = "知识库的增删改查操作")
 @RestController
 @RequestMapping("/api/knowledge-base")
 @RequiredArgsConstructor

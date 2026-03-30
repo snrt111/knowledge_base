@@ -59,6 +59,23 @@ minio:
   secret-key: minioadmin123
   bucket-name: knowledge-base
 
+# springdoc-openapi 开发环境配置
+springdoc:
+  swagger-ui:
+    enabled: true
+    operations-sorter: method    # 按 HTTP 方法排序
+  api-docs:
+    enabled: true
+
+# Knife4j 开发环境配置
+knife4j:
+  enable: true
+  setting:
+    enable-debug: true           # 开发环境开启调试
+    enable-document-manage: true
+  basic:
+    enable: false                # 开发环境关闭认证
+
 logging:
   level:
     com.snrt.knowledgebase: DEBUG

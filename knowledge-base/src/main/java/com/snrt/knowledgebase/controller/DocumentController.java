@@ -1,14 +1,11 @@
 package com.snrt.knowledgebase.controller;
 
-import com.snrt.knowledgebase.dto.ApiResponse;
-import com.snrt.knowledgebase.dto.BatchOperationResult;
-import com.snrt.knowledgebase.dto.DocumentDTO;
-import com.snrt.knowledgebase.dto.DocumentPreviewDTO;
-import com.snrt.knowledgebase.dto.PageResult;
+import com.snrt.knowledgebase.dto.*;
 import com.snrt.knowledgebase.dto.request.BatchDocumentRequest;
 import com.snrt.knowledgebase.exception.DocumentException;
 import com.snrt.knowledgebase.service.DocumentPreviewService;
 import com.snrt.knowledgebase.service.DocumentService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +20,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+@Tag(name = "知识库文档管理", description = "文档上传、下载、预览、删除等操作")
 @Slf4j
 @RestController
 @RequestMapping("/api/document")

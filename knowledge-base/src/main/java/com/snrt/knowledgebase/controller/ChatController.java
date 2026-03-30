@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.snrt.knowledgebase.dto.*;
 import com.snrt.knowledgebase.dto.request.CreateChatSessionRequest;
 import com.snrt.knowledgebase.service.ChatService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.List;
 
+@Tag(name = "智能问答", description = "聊天会话管理和 AI 智能问答功能")
 @Slf4j
 @RestController
 @RequestMapping("/api/chat")

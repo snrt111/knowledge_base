@@ -59,6 +59,25 @@ minio:
       database: ${REDIS_DATABASE:0}
       timeout: 5000
 
+# springdoc-openapi 生产环境配置
+springdoc:
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}  # 生产环境默认关闭，可通过环境变量开启
+    operations-sorter: order
+  api-docs:
+    enabled: ${API_DOCS_ENABLED:false}
+
+# Knife4j 生产环境配置
+knife4j:
+  enable: ${KNIFE4J_ENABLED:false}     # 生产环境默认关闭
+  setting:
+    enable-debug: false                # 生产环境关闭调试
+    enable-document-manage: false
+  basic:
+    enable: ${KNIFE4J_BASIC_ENABLE:true}  # 生产环境建议开启 Basic 认证
+    username: ${KNIFE4J_USERNAME:admin}
+    password: ${KNIFE4J_PASSWORD:admin123}
+
 logging:
   level:
     com.snrt.knowledgebase: INFO

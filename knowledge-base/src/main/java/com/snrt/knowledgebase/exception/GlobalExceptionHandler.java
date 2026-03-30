@@ -2,6 +2,7 @@ package com.snrt.knowledgebase.exception;
 
 import com.snrt.knowledgebase.dto.ApiResponse;
 import com.snrt.knowledgebase.exception.impl.DefaultExceptionLogger;
+import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -9,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
-
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 @RequiredArgsConstructor
+@Hidden
 public class GlobalExceptionHandler {
 
     private final DefaultExceptionLogger exceptionLogger;

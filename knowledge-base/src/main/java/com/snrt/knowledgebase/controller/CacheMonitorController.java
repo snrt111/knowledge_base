@@ -3,6 +3,7 @@ package com.snrt.knowledgebase.controller;
 import com.snrt.knowledgebase.dto.ApiResponse;
 import com.snrt.knowledgebase.dto.CacheStatsDTO;
 import com.snrt.knowledgebase.service.RAGCacheManager;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +18,7 @@ import java.util.Map;
  * @author SNRT
  * @since 1.0
  */
+@Tag(name = "系统监控", description = "缓存监控和系统健康检查")
 @Slf4j
 @RestController
 @RequestMapping("/api/monitor")
