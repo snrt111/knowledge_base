@@ -7,6 +7,9 @@ import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -44,33 +47,75 @@ public class CrossEncoderReranker {
 
         // 如果文档数量较少，直接返回
         if (documents.size() <= 3) {
+            log.info("[重排序] 文档数量较少 ({}个)，直接返回", documents.size());
             return documents.stream().limit(topK).collect(Collectors.toList());
         }
 
-        try {
-            log.info("[重排序] 查询: {}, 待排序文档: {} 个", query, documents.size());
+        String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
+        java.time.Instant start = java.time.Instant.now();
+        log.info("[{}] [重排序] 开始，查询: '{}', 待排序文档: {} 个, topK: {}", 
+                traceId, query, documents.size(), topK);
 
+        try {
             // 1. 使用轻量级规则预过滤（可选）
+            log.info("[{}] [重排序] 开始预过滤，输入文档数: {}", traceId, documents.size());
+            java.time.Instant filterStart = java.time.Instant.now();
             List<Document> candidates = preFilterByLength(documents, 10);
+            java.time.Duration filterDuration = java.time.Duration.between(filterStart, java.time.Instant.now());
+            log.info("[{}] [重排序] 预过滤完成，耗时: {}ms, 过滤后文档数: {}", 
+                    traceId, filterDuration.toMillis(), candidates.size());
 
             // 2. 构建重排序 Prompt
+            log.info("[{}] [重排序] 构建重排序Prompt，使用{}个候选文档", traceId, candidates.size());
+            java.time.Instant promptStart = java.time.Instant.now();
             String rerankPrompt = buildRerankPrompt(query, candidates);
+            java.time.Duration promptDuration = java.time.Duration.between(promptStart, java.time.Instant.now());
+            log.info("[{}] [重排序] Prompt构建完成，耗时: {}ms, Prompt长度: {}字符", 
+                    traceId, promptDuration.toMillis(), rerankPrompt.length());
 
             // 3. 调用模型获取排序结果
+            log.info("[{}] [重排序] 调用大模型进行重排序", traceId);
+            java.time.Instant modelStart = java.time.Instant.now();
             String response = chatModel.call(rerankPrompt);
+            java.time.Duration modelDuration = java.time.Duration.between(modelStart, java.time.Instant.now());
+            log.info("[{}] [重排序] 模型调用完成，耗时: {}ms, 响应长度: {}字符", 
+                    traceId, modelDuration.toMillis(), response.length());
 
             // 4. 解析排序结果
+            log.info("[{}] [重排序] 解析排序结果", traceId);
+            java.time.Instant parseStart = java.time.Instant.now();
             List<Integer> rankIndices = parseRankResult(response, candidates.size());
+            java.time.Duration parseDuration = java.time.Duration.between(parseStart, java.time.Instant.now());
+            log.info("[{}] [重排序] 解析完成，耗时: {}ms, 排序索引数: {}", 
+                    traceId, parseDuration.toMillis(), rankIndices.size());
 
             // 5. 根据排序结果重新组织文档
+            log.info("[{}] [重排序] 应用排序结果", traceId);
+            java.time.Instant applyStart = java.time.Instant.now();
             List<Document> reranked = applyRanking(candidates, rankIndices);
+            java.time.Duration applyDuration = java.time.Duration.between(applyStart, java.time.Instant.now());
+            log.info("[{}] [重排序] 排序应用完成，耗时: {}ms, 排序后文档数: {}", 
+                    traceId, applyDuration.toMillis(), reranked.size());
 
-            log.info("[重排序] 完成，返回前 {} 个结果", Math.min(topK, reranked.size()));
+            // 记录排序结果详情
+            log.debug("[{}] [重排序] 排序结果详情:", traceId);
+            for (int i = 0; i < Math.min(reranked.size(), 5); i++) {
+                Document doc = reranked.get(i);
+                String docName = getDocumentName(doc);
+                Double rerankScore = (Double) doc.getMetadata().get("rerank_score");
+                log.debug("[{}] [重排序] 文档{}: {}, 重排序分数: {:.3f}", 
+                        traceId, i+1, docName, rerankScore);
+            }
+
+            java.time.Duration totalDuration = java.time.Duration.between(start, java.time.Instant.now());
+            log.info("[{}] [重排序] 完成，总耗时: {}ms, 返回前 {} 个结果", 
+                    traceId, totalDuration.toMillis(), Math.min(topK, reranked.size()));
             return reranked.stream().limit(topK).collect(Collectors.toList());
 
         } catch (Exception e) {
-            log.error("[重排序] 失败: {}, 使用原始排序", e.getMessage());
+            log.error("[{}] [重排序] 失败: {}, 使用原始排序", traceId, e.getMessage(), e);
             // 降级：返回原始排序结果
+            log.info("[{}] [重排序] 降级处理：使用原始排序，返回前{}个结果", traceId, topK);
             return documents.stream().limit(topK).collect(Collectors.toList());
         }
     }
@@ -177,15 +222,27 @@ public class CrossEncoderReranker {
             return Collections.emptyList();
         }
 
+        String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
+        java.time.Instant start = java.time.Instant.now();
+        log.info("[{}] [规则重排序] 开始，查询: '{}', 待排序文档: {} 个, topK: {}", 
+                traceId, query, documents.size(), topK);
+
         String queryLower = query.toLowerCase();
         List<String> queryTerms = Arrays.asList(queryLower.split("\\s+"));
+        log.info("[{}] [规则重排序] 提取查询关键词: {}", traceId, String.join(", ", queryTerms));
 
-        return documents.stream()
+        java.time.Instant scoreStart = java.time.Instant.now();
+        List<Document> scoredDocs = documents.stream()
                 .map(doc -> {
                     double score = calculateRelevanceScore(doc, queryTerms, queryLower);
                     doc.getMetadata().put("rule_score", score);
                     return doc;
                 })
+                .collect(Collectors.toList());
+        java.time.Duration scoreDuration = java.time.Duration.between(scoreStart, java.time.Instant.now());
+
+        java.time.Instant sortStart = java.time.Instant.now();
+        List<Document> rerankedDocs = scoredDocs.stream()
                 .sorted((d1, d2) -> {
                     Double s1 = (Double) d1.getMetadata().get("rule_score");
                     Double s2 = (Double) d2.getMetadata().get("rule_score");
@@ -193,6 +250,23 @@ public class CrossEncoderReranker {
                 })
                 .limit(topK)
                 .collect(Collectors.toList());
+        java.time.Duration sortDuration = java.time.Duration.between(sortStart, java.time.Instant.now());
+
+        // 记录排序结果详情
+        log.debug("[{}] [规则重排序] 排序结果详情:", traceId);
+        for (int i = 0; i < Math.min(rerankedDocs.size(), 5); i++) {
+            Document doc = rerankedDocs.get(i);
+            String docName = getDocumentName(doc);
+            Double ruleScore = (Double) doc.getMetadata().get("rule_score");
+            log.debug("[{}] [规则重排序] 文档{}: {}, 规则分数: {:.3f}", 
+                    traceId, i+1, docName, ruleScore);
+        }
+
+        java.time.Duration totalDuration = java.time.Duration.between(start, java.time.Instant.now());
+        log.info("[{}] [规则重排序] 完成，总耗时: {}ms, 评分耗时: {}ms, 排序耗时: {}ms, 返回前 {} 个结果", 
+                traceId, totalDuration.toMillis(), scoreDuration.toMillis(), sortDuration.toMillis(), rerankedDocs.size());
+
+        return rerankedDocs;
     }
 
     /**
@@ -247,5 +321,13 @@ public class CrossEncoderReranker {
             index += substring.length();
         }
         return count;
+    }
+
+    /**
+     * 获取文档名称
+     */
+    private String getDocumentName(Document doc) {
+        Object docName = doc.getMetadata().get("document_name");
+        return docName != null ? docName.toString() : "未知文档";
     }
 }

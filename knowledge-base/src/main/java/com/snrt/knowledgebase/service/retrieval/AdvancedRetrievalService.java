@@ -7,6 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -43,41 +46,62 @@ public class AdvancedRetrievalService {
      * @return 检索结果文档列表
      */
     public List<Document> retrieve(String query, String knowledgeBaseId, int topK) {
-        log.info("[高级检索] 开始，查询: {}, 知识库: {}, topK: {}", query, knowledgeBaseId, topK);
+        String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
+        java.time.Instant start = java.time.Instant.now();
+        log.info("[{}] [高级检索] 开始，查询: '{}', 知识库: {}, topK: {}", traceId, query, knowledgeBaseId, topK);
 
         // 1. 查询改写
         String retrievalQuery = query;
         if (queryRewriterService.shouldRewrite(query)) {
-            log.info("[高级检索] 执行查询改写");
+            log.info("[{}] [高级检索] 执行查询改写", traceId);
+            Instant rewriteStart = java.time.Instant.now();
             QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
             retrievalQuery = rewrittenQuery.getEnhancedQuery();
-            log.info("[高级检索] 使用增强查询进行检索");
+            java.time.Duration rewriteDuration = java.time.Duration.between(rewriteStart, java.time.Instant.now());
+            log.info("[{}] [高级检索] 查询改写完成，耗时: {}ms, 原查询: '{}', 增强查询: '{}'", 
+                    traceId, rewriteDuration.toMillis(), query, retrievalQuery);
+        } else {
+            log.info("[{}] [高级检索] 无需查询改写，使用原始查询: '{}'", traceId, query);
         }
 
         // 2. 多路召回（获取更多候选）
         int recallCount = topK * 3; // 召回3倍数量的候选
+        log.info("[{}] [高级检索] 开始多路召回，召回数量: {}", traceId, recallCount);
+        Instant recallStart = java.time.Instant.now();
         List<Document> recalledDocs = multiRetriever.retrieve(retrievalQuery, knowledgeBaseId, recallCount);
+        java.time.Duration recallDuration = java.time.Duration.between(recallStart, java.time.Instant.now());
 
         if (recalledDocs.isEmpty()) {
-            log.warn("[高级检索] 未召回任何文档");
+            log.warn("[{}] [高级检索] 未召回任何文档，耗时: {}ms", traceId, recallDuration.toMillis());
             return List.of();
         }
 
-        log.info("[高级检索] 多路召回: {} 个文档", recalledDocs.size());
+        log.info("[{}] [高级检索] 多路召回完成，耗时: {}ms, 召回文档数: {}", 
+                traceId, recallDuration.toMillis(), recalledDocs.size());
 
         // 3. 重排序（精排）
+        log.info("[{}] [高级检索] 开始重排序，输入文档数: {}, 目标返回数: {}", traceId, recalledDocs.size(), topK);
+        Instant rerankStart = java.time.Instant.now();
         List<Document> rerankedDocs = reranker.rerankByRules(retrievalQuery, recalledDocs, topK);
+        java.time.Duration rerankDuration = java.time.Duration.between(rerankStart, java.time.Instant.now());
 
-        log.info("[高级检索] 重排序完成，返回前 {} 个结果", rerankedDocs.size());
+        log.info("[{}] [高级检索] 重排序完成，耗时: {}ms, 返回前 {} 个结果", 
+                traceId, rerankDuration.toMillis(), rerankedDocs.size());
 
         // 4. 记录分数信息
-        rerankedDocs.forEach(doc -> {
+        log.debug("[{}] [高级检索] 重排序结果详情:", traceId);
+        for (int i = 0; i < Math.min(rerankedDocs.size(), 5); i++) {
+            Document doc = rerankedDocs.get(i);
+            String docName = getDocumentName(doc);
             Double rrfScore = (Double) doc.getMetadata().get("rrf_score");
             Double ruleScore = (Double) doc.getMetadata().get("rule_score");
-            log.debug("[高级检索] 文档: {}, RRF分数: {}, 规则分数: {}",
-                    getDocumentName(doc), rrfScore, ruleScore);
-        });
+            log.debug("[{}] [高级检索] 文档{}: {}, RRF分数: {:.3f}, 规则分数: {:.3f}",
+                    traceId, i+1, docName, rrfScore, ruleScore);
+        }
 
+        java.time.Duration totalDuration = java.time.Duration.between(start, java.time.Instant.now());
+        log.info("[{}] [高级检索] 完成，总耗时: {}ms, 最终返回文档数: {}", 
+                traceId, totalDuration.toMillis(), rerankedDocs.size());
         return rerankedDocs;
     }
 
@@ -204,27 +228,48 @@ public class AdvancedRetrievalService {
      * @return 检索结果文档列表
      */
     public List<Document> smartRetrieve(String query, String knowledgeBaseId, int topK) {
-        log.info("[智能检索] 开始，查询: {}, 知识库: {}, topK: {}", query, knowledgeBaseId, topK);
+        String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
+        java.time.Instant start = java.time.Instant.now();
+        log.info("[{}] [智能检索] 开始，查询: '{}', 知识库: {}, topK: {}", traceId, query, knowledgeBaseId, topK);
 
         // 1. 执行查询改写
         String processedQuery = query;
         if (queryRewriterService.shouldRewrite(query)) {
-            log.info("[智能检索] 执行查询改写");
+            log.info("[{}] [智能检索] 执行查询改写", traceId);
+            Instant rewriteStart = java.time.Instant.now();
             QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
             processedQuery = rewrittenQuery.getEnhancedQuery();
+            java.time.Duration rewriteDuration = java.time.Duration.between(rewriteStart, java.time.Instant.now());
+            log.info("[{}] [智能检索] 查询改写完成，耗时: {}ms, 原查询: '{}', 增强查询: '{}'", 
+                    traceId, rewriteDuration.toMillis(), query, processedQuery);
+        } else {
+            log.info("[{}] [智能检索] 无需查询改写，使用原始查询: '{}'", traceId, query);
         }
 
         // 2. 判断是否使用HyDE
+        log.info("[{}] [智能检索] 判断是否使用HyDE", traceId);
         boolean useHyde = hydeService.shouldUseHyde(processedQuery);
-        log.info("[智能检索] 是否使用HyDE: {}", useHyde);
+        log.info("[{}] [智能检索] 是否使用HyDE: {}", traceId, useHyde);
 
+        List<Document> result;
         if (useHyde) {
             // 使用HyDE检索
-            return hydeService.retrieveWithHyde(processedQuery, knowledgeBaseId, topK);
+            log.info("[{}] [智能检索] 使用HyDE检索", traceId);
+            Instant hydeStart = java.time.Instant.now();
+            result = hydeService.retrieveWithHyde(processedQuery, knowledgeBaseId, topK);
+            java.time.Duration hydeDuration = java.time.Duration.between(hydeStart, java.time.Instant.now());
+            log.info("[{}] [智能检索] HyDE检索完成，耗时: {}ms, 返回文档数: {}", 
+                    traceId, hydeDuration.toMillis(), result.size());
         } else {
             // 使用普通检索
-            return retrieve(processedQuery, knowledgeBaseId, topK);
+            log.info("[{}] [智能检索] 使用普通高级检索", traceId);
+            result = retrieve(processedQuery, knowledgeBaseId, topK);
         }
+
+        java.time.Duration totalDuration = java.time.Duration.between(start, java.time.Instant.now());
+        log.info("[{}] [智能检索] 完成，总耗时: {}ms, 最终返回文档数: {}", 
+                traceId, totalDuration.toMillis(), result.size());
+        return result;
     }
 
     /**

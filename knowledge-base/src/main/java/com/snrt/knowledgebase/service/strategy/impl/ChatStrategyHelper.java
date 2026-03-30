@@ -172,53 +172,96 @@ public class ChatStrategyHelper {
     }
 
     private PromptResult buildPromptWithSources(String message, String knowledgeBaseId, String compressedContext) {
+        String traceId = LogUtils.getTraceId();
+        log.info("[{}] [RAG流程] 开始构建Prompt，用户查询: '{}', 知识库ID: {}, 压缩上下文长度: {}字符",
+                traceId, message, knowledgeBaseId, compressedContext != null ? compressedContext.length() : 0);
+
         if (knowledgeBaseId == null) {
-            log.debug("[Prompt构建] 未指定知识库，直接返回用户消息");
+            log.info("[{}] [RAG流程] 未指定知识库，直接返回用户消息", traceId);
             // 即使没有知识库，也使用压缩后的上下文
             String prompt = buildSystemPrompt(null, message, compressedContext);
+            log.info("[{}] [RAG流程] 构建完成，Prompt长度: {}字符，无检索文档", traceId, prompt.length());
             return new PromptResult(prompt, null);
         }
 
-        log.info("[Prompt构建] 知识库ID: {}, 开始检索相关文档", knowledgeBaseId);
+        log.info("[{}] [RAG流程] 知识库ID: {}, 开始检索相关文档", traceId, knowledgeBaseId);
 
         // 检查缓存
-        Optional<RAGCacheManager.CachedSearchResult> cachedResult =
+        log.debug("[{}] [RAG流程] 检查缓存，查询: '{}', 知识库: {}", traceId, message, knowledgeBaseId);
+        Optional<RAGCacheManager.CachedSearchResult> cachedResult = 
                 ragCacheManager.getCachedSearchResult(message, knowledgeBaseId);
 
         if (cachedResult.isPresent()) {
-            log.info("[Prompt构建] 命中缓存，直接返回缓存结果");
+            log.info("[{}] [RAG流程] 命中缓存，缓存结果: {}个文档", traceId, cachedResult.get().getDocuments().size());
             List<Document> cachedDocs = cachedResult.get().getDocuments();
             List<DocumentSourceDTO> cachedSources = cachedResult.get().getSources();
             String prompt = buildSystemPrompt(cachedDocs, message, compressedContext);
+            log.info("[{}] [RAG流程] 构建完成，Prompt长度: {}字符，使用缓存文档: {}个", traceId, prompt.length(), cachedDocs.size());
             return new PromptResult(prompt, cachedSources);
         }
 
         // 使用高级检索服务（智能检索，自动选择是否使用HyDE）
-        log.info("[Prompt构建] 使用高级检索服务（智能检索+HyDE）");
+        log.info("[{}] [RAG流程] 未命中缓存，使用高级检索服务（智能检索+HyDE）", traceId);
+        Instant retrievalStart = Instant.now();
         List<Document> retrievedDocs = advancedRetrievalService.smartRetrieve(
                 message, knowledgeBaseId, Constants.Chat.MAX_RETRIEVAL_RESULTS);
+        Duration retrievalDuration = Duration.between(retrievalStart, Instant.now());
+
+        log.info("[{}] [RAG流程] 检索完成，耗时: {}ms，返回文档数: {}", 
+                traceId, retrievalDuration.toMillis(), retrievedDocs.size());
 
         if (retrievedDocs.isEmpty()) {
-            log.warn("[Prompt构建] 未检索到相关文档");
+            log.warn("[{}] [RAG流程] 未检索到相关文档", traceId);
             String prompt = buildSystemPrompt(null, message, compressedContext);
+            log.info("[{}] [RAG流程] 构建完成，Prompt长度: {}字符，无检索文档", traceId, prompt.length());
             return new PromptResult(prompt, null);
         }
 
         // 转换为 DocumentSourceDTO
+        log.debug("[{}] [RAG流程] 开始转换文档为DocumentSourceDTO，输入文档数: {}", traceId, retrievedDocs.size());
         List<DocumentSourceDTO> documentSources = convertToDocumentSources(retrievedDocs);
+        log.info("[{}] [RAG流程] 转换完成，输出DocumentSourceDTO数: {}", traceId, documentSources.size());
 
         // 构建 Prompt
+        log.debug("[{}] [RAG流程] 开始构建Prompt，使用{}个文档", traceId, retrievedDocs.size());
         String prompt = buildSystemPrompt(retrievedDocs, message, compressedContext);
+        log.info("[{}] [RAG流程] Prompt构建完成，长度: {}字符，包含{}个参考文档", 
+                traceId, prompt.length(), retrievedDocs.size());
 
         // 缓存结果
+        log.debug("[{}] [RAG流程] 开始缓存检索结果，查询: '{}', 文档数: {}", traceId, message, retrievedDocs.size());
         ragCacheManager.cacheSearchResult(message, knowledgeBaseId, retrievedDocs, documentSources);
+        log.info("[{}] [RAG流程] 缓存完成", traceId);
 
         // 记录检索质量
         double quality = advancedRetrievalService.estimateRetrievalQuality(retrievedDocs);
-        log.info("[Prompt构建] 检索完成，文档数: {}, 质量分数: {:.2f}",
-                retrievedDocs.size(), quality);
+        log.info("[{}] [RAG流程] 检索质量评估: 分数 = {:.2f}, 等级 = {}", 
+                traceId, quality, getQualityLevel(quality));
 
+        // 记录文档详情
+        log.debug("[{}] [RAG流程] 检索文档详情:", traceId);
+        for (int i = 0; i < Math.min(retrievedDocs.size(), 5); i++) {
+            Document doc = retrievedDocs.get(i);
+            String docName = getMetadataString(doc, Constants.VectorStore.METADATA_DOCUMENT_NAME, "未知文档");
+            Double rrfScore = (Double) doc.getMetadata().get("rrf_score");
+            Double ruleScore = (Double) doc.getMetadata().get("rule_score");
+            log.debug("[{}] [RAG流程] 文档{}: {}，RRF分数: {:.3f}，规则分数: {:.3f}", 
+                    traceId, i+1, docName, rrfScore, ruleScore);
+        }
+
+        log.info("[{}] [RAG流程] 完成，总文档数: {}, 构建的Prompt长度: {}字符", 
+                traceId, retrievedDocs.size(), prompt.length());
         return new PromptResult(prompt, documentSources);
+    }
+
+    /**
+     * 获取检索质量等级
+     */
+    private String getQualityLevel(double quality) {
+        if (quality >= 0.8) return "优秀"; 
+        if (quality >= 0.6) return "良好"; 
+        if (quality >= 0.4) return "一般"; 
+        return "较差";
     }
 
     /**

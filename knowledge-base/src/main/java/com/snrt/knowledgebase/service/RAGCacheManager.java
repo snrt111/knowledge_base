@@ -81,16 +81,22 @@ public class RAGCacheManager {
      */
     public String generateCacheKey(String query) {
         try {
+            String normalizedQuery = query.trim().toLowerCase();
             MessageDigest md = MessageDigest.getInstance("MD5");
-            byte[] hash = md.digest(query.trim().toLowerCase().getBytes(StandardCharsets.UTF_8));
+            byte[] hash = md.digest(normalizedQuery.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
             for (byte b : hash) {
                 sb.append(String.format("%02x", b));
             }
-            return sb.toString();
+            String key = sb.toString();
+            log.debug("生成缓存键: 原始查询='{}', 标准化='{}', 键='{}'", 
+                    query, normalizedQuery, key);
+            return key;
         } catch (NoSuchAlgorithmException e) {
             log.error("生成缓存键失败", e);
-            return String.valueOf(query.hashCode());
+            String fallbackKey = String.valueOf(query.hashCode());
+            log.warn("使用哈希码作为缓存键: '{}'", fallbackKey);
+            return fallbackKey;
         }
     }
 
@@ -98,36 +104,50 @@ public class RAGCacheManager {
      * 生成语义缓存键（基于SimHash思想，相似查询使用相同键）
      */
     public String generateSemanticKey(String query) {
+        String originalQuery = query;
         String normalized = query.toLowerCase()
                 .replaceAll("[^\\u4e00-\\u9fa5a-z0-9]", "")
                 .trim();
         if (normalized.isEmpty()) {
             normalized = query.toLowerCase().trim();
         }
-        return generateCacheKey(normalized);
+        String key = generateCacheKey(normalized);
+        log.debug("生成语义缓存键: 原始查询='{}', 标准化='{}', 键='{}'", 
+                originalQuery, normalized, key);
+        return key;
     }
 
     // ==================== Embedding缓存 (L1本地缓存) ====================
 
     public void cacheEmbedding(String text, float[] embedding) {
+        long startTime = System.currentTimeMillis();
         String key = generateCacheKey(text);
         embeddingCache.put(key, embedding);
-        log.debug("Embedding缓存已保存: key={}", key);
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("[Embedding缓存] 保存成功，键: {}, 文本长度: {}字符, 向量维度: {}, 耗时: {}ms", 
+                key, text.length(), embedding.length, duration);
     }
 
     public Optional<float[]> getCachedEmbedding(String text) {
+        long startTime = System.currentTimeMillis();
         String key = generateCacheKey(text);
         float[] cached = embeddingCache.getIfPresent(key);
+        long duration = System.currentTimeMillis() - startTime;
         if (cached != null) {
-            log.debug("Embedding缓存命中: key={}", key);
+            log.info("[Embedding缓存] 命中，键: {}, 文本长度: {}字符, 向量维度: {}, 耗时: {}ms", 
+                    key, text.length(), cached.length, duration);
             return Optional.of(cached);
+        } else {
+            log.debug("[Embedding缓存] 未命中，键: {}, 文本长度: {}字符, 耗时: {}ms", 
+                    key, text.length(), duration);
+            return Optional.empty();
         }
-        return Optional.empty();
     }
 
     // ==================== 检索结果缓存 (L1本地 + L2 Redis) ====================
 
     public void cacheSearchResult(String query, String knowledgeBaseId, List<Document> results, List<DocumentSourceDTO> sources) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_KEY_PREFIX + knowledgeBaseId + ":" + semanticKey;
 
@@ -135,79 +155,123 @@ public class RAGCacheManager {
 
         // L1: 本地缓存
         localSearchCache.put(cacheKey, cachedResult);
+        log.debug("[检索结果缓存] 本地缓存保存成功，键: {}, 文档数: {}", cacheKey, results.size());
 
         // L2: Redis缓存（序列化存储）
         try {
+            long serializeStart = System.currentTimeMillis();
             String json = serializeSearchResult(cachedResult);
+            long serializeDuration = System.currentTimeMillis() - serializeStart;
+            
+            long redisStart = System.currentTimeMillis();
             redisTemplate.opsForValue().set(cacheKey, json, REDIS_TTL);
-            log.debug("检索结果缓存已保存: key={}, documents={}", cacheKey, results.size());
+            long redisDuration = System.currentTimeMillis() - redisStart;
+            
+            long totalDuration = System.currentTimeMillis() - startTime;
+            log.info("[检索结果缓存] Redis缓存保存成功，键: {}, 文档数: {}, 序列化耗时: {}ms, Redis操作耗时: {}ms, 总耗时: {}ms", 
+                    cacheKey, results.size(), serializeDuration, redisDuration, totalDuration);
         } catch (Exception e) {
-            log.warn("Redis缓存保存失败: {}", e.getMessage());
+            long totalDuration = System.currentTimeMillis() - startTime;
+            log.warn("[检索结果缓存] Redis缓存保存失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, totalDuration, e.getMessage());
         }
     }
 
     public Optional<CachedSearchResult> getCachedSearchResult(String query, String knowledgeBaseId) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_KEY_PREFIX + knowledgeBaseId + ":" + semanticKey;
 
         // L1: 先查本地缓存
         CachedSearchResult localResult = localSearchCache.getIfPresent(cacheKey);
         if (localResult != null) {
-            log.debug("检索结果本地缓存命中: key={}", cacheKey);
+            long duration = System.currentTimeMillis() - startTime;
+            int docCount = localResult.getDocuments().size();
+            log.info("[检索结果缓存] 本地缓存命中，键: {}, 文档数: {}, 耗时: {}ms", 
+                    cacheKey, docCount, duration);
             return Optional.of(localResult);
         }
 
         // L2: 查Redis缓存
         try {
+            long redisStart = System.currentTimeMillis();
             String json = redisTemplate.opsForValue().get(cacheKey);
+            long redisDuration = System.currentTimeMillis() - redisStart;
+            
             if (json != null) {
+                long deserializeStart = System.currentTimeMillis();
                 CachedSearchResult result = deserializeSearchResult(json);
+                long deserializeDuration = System.currentTimeMillis() - deserializeStart;
+                
                 // 回填本地缓存
                 localSearchCache.put(cacheKey, result);
                 redisHitCount.incrementAndGet();
-                log.debug("检索结果Redis缓存命中: key={}", cacheKey);
+                
+                long totalDuration = System.currentTimeMillis() - startTime;
+                int docCount = result.getDocuments().size();
+                log.info("[检索结果缓存] Redis缓存命中，键: {}, 文档数: {}, Redis操作耗时: {}ms, 反序列化耗时: {}ms, 总耗时: {}ms", 
+                        cacheKey, docCount, redisDuration, deserializeDuration, totalDuration);
                 return Optional.of(result);
             } else {
                 redisMissCount.incrementAndGet();
+                long totalDuration = System.currentTimeMillis() - startTime;
+                log.debug("[检索结果缓存] Redis缓存未命中，键: {}, 耗时: {}ms", 
+                        cacheKey, totalDuration);
             }
         } catch (Exception e) {
-            log.warn("Redis缓存读取失败: {}", e.getMessage());
             redisMissCount.incrementAndGet();
+            long totalDuration = System.currentTimeMillis() - startTime;
+            log.warn("[检索结果缓存] Redis缓存读取失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, totalDuration, e.getMessage());
         }
 
+        long totalDuration = System.currentTimeMillis() - startTime;
+        log.debug("[检索结果缓存] 未命中，键: {}, 耗时: {}ms", cacheKey, totalDuration);
         return Optional.empty();
     }
 
     // ==================== 聊天响应缓存 (L2 Redis) ====================
 
     public void cacheChatResponse(String query, String knowledgeBaseId, String response) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_RESPONSE_PREFIX + knowledgeBaseId + ":" + semanticKey;
 
         try {
             redisTemplate.opsForValue().set(cacheKey, response, Duration.ofMinutes(5));
-            log.debug("聊天响应缓存已保存: key={}", cacheKey);
+            long duration = System.currentTimeMillis() - startTime;
+            log.info("[聊天响应缓存] 保存成功，键: {}, 查询长度: {}字符, 响应长度: {}字符, 耗时: {}ms", 
+                    cacheKey, query.length(), response.length(), duration);
         } catch (Exception e) {
-            log.warn("聊天响应缓存保存失败: {}", e.getMessage());
+            long duration = System.currentTimeMillis() - startTime;
+            log.warn("[聊天响应缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, duration, e.getMessage());
         }
     }
 
     public Optional<String> getCachedChatResponse(String query, String knowledgeBaseId) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_RESPONSE_PREFIX + knowledgeBaseId + ":" + semanticKey;
 
         try {
             String response = redisTemplate.opsForValue().get(cacheKey);
+            long duration = System.currentTimeMillis() - startTime;
             if (response != null) {
                 chatResponseHitCount.incrementAndGet();
-                log.debug("聊天响应缓存命中: key={}", cacheKey);
+                log.info("[聊天响应缓存] 命中，键: {}, 查询长度: {}字符, 响应长度: {}字符, 耗时: {}ms", 
+                        cacheKey, query.length(), response.length(), duration);
                 return Optional.of(response);
             } else {
                 chatResponseMissCount.incrementAndGet();
+                log.debug("[聊天响应缓存] 未命中，键: {}, 查询长度: {}字符, 耗时: {}ms", 
+                        cacheKey, query.length(), duration);
             }
         } catch (Exception e) {
-            log.warn("聊天响应缓存读取失败: {}", e.getMessage());
             chatResponseMissCount.incrementAndGet();
+            long duration = System.currentTimeMillis() - startTime;
+            log.warn("[聊天响应缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, duration, e.getMessage());
         }
 
         return Optional.empty();
@@ -216,29 +280,42 @@ public class RAGCacheManager {
     // ==================== HyDE假设答案缓存 (L2 Redis) ====================
 
     public void cacheHypotheticalAnswer(String query, String answer) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_HYDE_PREFIX + semanticKey;
 
         try {
             redisTemplate.opsForValue().set(cacheKey, answer, Duration.ofMinutes(10));
-            log.debug("HyDE假设答案缓存已保存: key={}", cacheKey);
+            long duration = System.currentTimeMillis() - startTime;
+            log.info("[HyDE缓存] 保存成功，键: {}, 查询长度: {}字符, 答案长度: {}字符, 耗时: {}ms", 
+                    cacheKey, query.length(), answer.length(), duration);
         } catch (Exception e) {
-            log.warn("HyDE假设答案缓存保存失败: {}", e.getMessage());
+            long duration = System.currentTimeMillis() - startTime;
+            log.warn("[HyDE缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, duration, e.getMessage());
         }
     }
 
     public Optional<String> getCachedHypotheticalAnswer(String query) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_HYDE_PREFIX + semanticKey;
 
         try {
             String answer = redisTemplate.opsForValue().get(cacheKey);
+            long duration = System.currentTimeMillis() - startTime;
             if (answer != null) {
-                log.debug("HyDE假设答案缓存命中: key={}", cacheKey);
+                log.info("[HyDE缓存] 命中，键: {}, 查询长度: {}字符, 答案长度: {}字符, 耗时: {}ms", 
+                        cacheKey, query.length(), answer.length(), duration);
                 return Optional.of(answer);
+            } else {
+                log.debug("[HyDE缓存] 未命中，键: {}, 查询长度: {}字符, 耗时: {}ms", 
+                        cacheKey, query.length(), duration);
             }
         } catch (Exception e) {
-            log.warn("HyDE假设答案缓存读取失败: {}", e.getMessage());
+            long duration = System.currentTimeMillis() - startTime;
+            log.warn("[HyDE缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, duration, e.getMessage());
         }
 
         return Optional.empty();
@@ -247,32 +324,55 @@ public class RAGCacheManager {
     // ==================== 查询改写缓存 (L2 Redis) ====================
 
     public void cacheRewrittenQuery(String query, Object rewrittenQuery) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_REWRITE_PREFIX + semanticKey;
 
         try {
+            long serializeStart = System.currentTimeMillis();
             String json = objectMapper.writeValueAsString(rewrittenQuery);
+            long serializeDuration = System.currentTimeMillis() - serializeStart;
+            
             redisTemplate.opsForValue().set(cacheKey, json, Duration.ofMinutes(10));
-            log.debug("查询改写结果缓存已保存: key={}", cacheKey);
+            long totalDuration = System.currentTimeMillis() - startTime;
+            log.info("[查询改写缓存] 保存成功，键: {}, 查询长度: {}字符, 序列化长度: {}字符, 序列化耗时: {}ms, 总耗时: {}ms", 
+                    cacheKey, query.length(), json.length(), serializeDuration, totalDuration);
         } catch (Exception e) {
-            log.warn("查询改写结果缓存保存失败: {}", e.getMessage());
+            long duration = System.currentTimeMillis() - startTime;
+            log.warn("[查询改写缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, duration, e.getMessage());
         }
     }
 
     public Optional<com.snrt.knowledgebase.service.retrieval.QueryRewriterService.RewrittenQuery> getCachedRewrittenQuery(String query) {
+        long startTime = System.currentTimeMillis();
         String semanticKey = generateSemanticKey(query);
         String cacheKey = REDIS_REWRITE_PREFIX + semanticKey;
 
         try {
+            long redisStart = System.currentTimeMillis();
             String json = redisTemplate.opsForValue().get(cacheKey);
+            long redisDuration = System.currentTimeMillis() - redisStart;
+            
             if (json != null) {
+                long deserializeStart = System.currentTimeMillis();
                 com.snrt.knowledgebase.service.retrieval.QueryRewriterService.RewrittenQuery result = 
                     objectMapper.readValue(json, com.snrt.knowledgebase.service.retrieval.QueryRewriterService.RewrittenQuery.class);
-                log.debug("查询改写结果缓存命中: key={}", cacheKey);
+                long deserializeDuration = System.currentTimeMillis() - deserializeStart;
+                long totalDuration = System.currentTimeMillis() - startTime;
+                
+                log.info("[查询改写缓存] 命中，键: {}, 查询长度: {}字符, 序列化长度: {}字符, Redis操作耗时: {}ms, 反序列化耗时: {}ms, 总耗时: {}ms", 
+                        cacheKey, query.length(), json.length(), redisDuration, deserializeDuration, totalDuration);
                 return Optional.of(result);
+            } else {
+                long totalDuration = System.currentTimeMillis() - startTime;
+                log.debug("[查询改写缓存] 未命中，键: {}, 查询长度: {}字符, 耗时: {}ms", 
+                        cacheKey, query.length(), totalDuration);
             }
         } catch (Exception e) {
-            log.warn("查询改写结果缓存读取失败: {}", e.getMessage());
+            long duration = System.currentTimeMillis() - startTime;
+            log.warn("[查询改写缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
+                    cacheKey, duration, e.getMessage());
         }
 
         return Optional.empty();
