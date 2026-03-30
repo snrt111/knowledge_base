@@ -1,6 +1,7 @@
 package com.snrt.knowledgebase.service.retrieval;
 
 import com.snrt.knowledgebase.dto.DocumentSourceDTO;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
@@ -24,15 +25,12 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AdvancedRetrievalService {
 
     private final MultiRetriever multiRetriever;
     private final CrossEncoderReranker reranker;
-
-    public AdvancedRetrievalService(MultiRetriever multiRetriever, CrossEncoderReranker reranker) {
-        this.multiRetriever = multiRetriever;
-        this.reranker = reranker;
-    }
+    private final HydeService hydeService;
 
     /**
      * 执行高级检索（多路召回 + 重排序）
@@ -184,5 +182,37 @@ public class AdvancedRetrievalService {
 
         // 归一化到 0-1
         return Math.min(topScore / 20.0, 1.0);
+    }
+
+    /**
+     * 执行智能检索（根据查询自动选择是否使用HyDE）
+     *
+     * @param query 用户查询
+     * @param knowledgeBaseId 知识库ID
+     * @param topK 最终返回结果数量
+     * @return 检索结果文档列表
+     */
+    public List<Document> smartRetrieve(String query, String knowledgeBaseId, int topK) {
+        log.info("[智能检索] 开始，查询: {}, 知识库: {}, topK: {}", query, knowledgeBaseId, topK);
+
+        // 判断是否使用HyDE
+        boolean useHyde = hydeService.shouldUseHyde(query);
+        log.info("[智能检索] 是否使用HyDE: {}", useHyde);
+
+        if (useHyde) {
+            // 使用HyDE检索
+            return hydeService.retrieveWithHyde(query, knowledgeBaseId, topK);
+        } else {
+            // 使用普通检索
+            return retrieve(query, knowledgeBaseId, topK);
+        }
+    }
+
+    /**
+     * 执行智能检索并转换为 DocumentSourceDTO
+     */
+    public List<DocumentSourceDTO> smartRetrieveAndConvert(String query, String knowledgeBaseId, int topK) {
+        List<Document> documents = smartRetrieve(query, knowledgeBaseId, topK);
+        return convertToDocumentSources(documents);
     }
 }

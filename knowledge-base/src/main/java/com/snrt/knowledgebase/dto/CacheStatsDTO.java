@@ -127,6 +127,11 @@ public class CacheStatsDTO {
         private Long chatResponseKeyCount;
 
         /**
+         * HyDE假设答案缓存键数量（估算）
+         */
+        private Long hydeKeyCount;
+
+        /**
          * 总键数量
          */
         private Long totalKeyCount;

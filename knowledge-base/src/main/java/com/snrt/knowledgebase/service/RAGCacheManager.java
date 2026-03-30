@@ -50,6 +50,7 @@ public class RAGCacheManager {
 
     private static final String REDIS_KEY_PREFIX = "rag:search:";
     private static final String REDIS_RESPONSE_PREFIX = "rag:response:";
+    private static final String REDIS_HYDE_PREFIX = "rag:hyde:";
     private static final Duration REDIS_TTL = Duration.ofMinutes(10);
     private static final Duration LOCAL_TTL = Duration.ofMinutes(5);
 
@@ -211,6 +212,37 @@ public class RAGCacheManager {
         return Optional.empty();
     }
 
+    // ==================== HyDE假设答案缓存 (L2 Redis) ====================
+
+    public void cacheHypotheticalAnswer(String query, String answer) {
+        String semanticKey = generateSemanticKey(query);
+        String cacheKey = REDIS_HYDE_PREFIX + semanticKey;
+
+        try {
+            redisTemplate.opsForValue().set(cacheKey, answer, Duration.ofMinutes(10));
+            log.debug("HyDE假设答案缓存已保存: key={}", cacheKey);
+        } catch (Exception e) {
+            log.warn("HyDE假设答案缓存保存失败: {}", e.getMessage());
+        }
+    }
+
+    public Optional<String> getCachedHypotheticalAnswer(String query) {
+        String semanticKey = generateSemanticKey(query);
+        String cacheKey = REDIS_HYDE_PREFIX + semanticKey;
+
+        try {
+            String answer = redisTemplate.opsForValue().get(cacheKey);
+            if (answer != null) {
+                log.debug("HyDE假设答案缓存命中: key={}", cacheKey);
+                return Optional.of(answer);
+            }
+        } catch (Exception e) {
+            log.warn("HyDE假设答案缓存读取失败: {}", e.getMessage());
+        }
+
+        return Optional.empty();
+    }
+
     // ==================== 缓存统计 ====================
 
     /**
@@ -271,6 +303,7 @@ public class RAGCacheManager {
         try {
             long searchResultCount = countRedisKeys(REDIS_KEY_PREFIX + "*");
             long chatResponseCount = countRedisKeys(REDIS_RESPONSE_PREFIX + "*");
+            long hydeCount = countRedisKeys(REDIS_HYDE_PREFIX + "*");
 
             long redisHits = redisHitCount.get();
             long redisMisses = redisMissCount.get();
@@ -281,7 +314,8 @@ public class RAGCacheManager {
                     .connected(true)
                     .searchResultKeyCount(searchResultCount)
                     .chatResponseKeyCount(chatResponseCount)
-                    .totalKeyCount(searchResultCount + chatResponseCount)
+                    .hydeKeyCount(hydeCount)
+                    .totalKeyCount(searchResultCount + chatResponseCount + hydeCount)
                     .memoryUsage(null) // Redis内存使用需要额外配置
                     .build();
         } catch (Exception e) {
@@ -290,6 +324,7 @@ public class RAGCacheManager {
                     .connected(false)
                     .searchResultKeyCount(0L)
                     .chatResponseKeyCount(0L)
+                    .hydeKeyCount(0L)
                     .totalKeyCount(0L)
                     .build();
         }
@@ -380,10 +415,11 @@ public class RAGCacheManager {
                 localSearchStats.getStatus());
 
         CacheStatsDTO.RedisCacheStats redisStats = stats.getRedisCacheStats();
-        log.info("Redis缓存 - 连接状态: {}, 检索结果键: {}, 聊天响应键: {}",
+        log.info("Redis缓存 - 连接状态: {}, 检索结果键: {}, 聊天响应键: {}, HyDE键: {}",
                 redisStats.getConnected() ? "正常" : "异常",
                 redisStats.getSearchResultKeyCount(),
-                redisStats.getChatResponseKeyCount());
+                redisStats.getChatResponseKeyCount(),
+                redisStats.getHydeKeyCount());
     }
 
     // ==================== 序列化/反序列化 ====================

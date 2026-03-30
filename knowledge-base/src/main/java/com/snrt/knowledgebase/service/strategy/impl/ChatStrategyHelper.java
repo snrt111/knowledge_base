@@ -193,9 +193,9 @@ public class ChatStrategyHelper {
             return new PromptResult(prompt, cachedSources);
         }
 
-        // 使用高级检索服务（多路召回 + 重排序）
-        log.info("[Prompt构建] 使用高级检索服务（多路召回+重排序）");
-        List<Document> retrievedDocs = advancedRetrievalService.retrieve(
+        // 使用高级检索服务（智能检索，自动选择是否使用HyDE）
+        log.info("[Prompt构建] 使用高级检索服务（智能检索+HyDE）");
+        List<Document> retrievedDocs = advancedRetrievalService.smartRetrieve(
                 message, knowledgeBaseId, Constants.Chat.MAX_RETRIEVAL_RESULTS);
 
         if (retrievedDocs.isEmpty()) {
