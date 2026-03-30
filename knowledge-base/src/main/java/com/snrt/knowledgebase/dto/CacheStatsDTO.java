@@ -132,6 +132,11 @@ public class CacheStatsDTO {
         private Long hydeKeyCount;
 
         /**
+         * 查询改写缓存键数量（估算）
+         */
+        private Long rewriteKeyCount;
+
+        /**
          * 总键数量
          */
         private Long totalKeyCount;

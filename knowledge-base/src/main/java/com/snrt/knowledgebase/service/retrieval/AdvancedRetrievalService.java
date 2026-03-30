@@ -1,6 +1,7 @@
 package com.snrt.knowledgebase.service.retrieval;
 
 import com.snrt.knowledgebase.dto.DocumentSourceDTO;
+import com.snrt.knowledgebase.service.retrieval.QueryRewriterService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -31,9 +32,10 @@ public class AdvancedRetrievalService {
     private final MultiRetriever multiRetriever;
     private final CrossEncoderReranker reranker;
     private final HydeService hydeService;
+    private final QueryRewriterService queryRewriterService;
 
     /**
-     * 执行高级检索（多路召回 + 重排序）
+     * 执行高级检索（查询改写 + 多路召回 + 重排序）
      *
      * @param query 用户查询
      * @param knowledgeBaseId 知识库ID
@@ -43,9 +45,18 @@ public class AdvancedRetrievalService {
     public List<Document> retrieve(String query, String knowledgeBaseId, int topK) {
         log.info("[高级检索] 开始，查询: {}, 知识库: {}, topK: {}", query, knowledgeBaseId, topK);
 
-        // 1. 多路召回（获取更多候选）
+        // 1. 查询改写
+        String retrievalQuery = query;
+        if (queryRewriterService.shouldRewrite(query)) {
+            log.info("[高级检索] 执行查询改写");
+            QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
+            retrievalQuery = rewrittenQuery.getEnhancedQuery();
+            log.info("[高级检索] 使用增强查询进行检索");
+        }
+
+        // 2. 多路召回（获取更多候选）
         int recallCount = topK * 3; // 召回3倍数量的候选
-        List<Document> recalledDocs = multiRetriever.retrieve(query, knowledgeBaseId, recallCount);
+        List<Document> recalledDocs = multiRetriever.retrieve(retrievalQuery, knowledgeBaseId, recallCount);
 
         if (recalledDocs.isEmpty()) {
             log.warn("[高级检索] 未召回任何文档");
@@ -54,12 +65,12 @@ public class AdvancedRetrievalService {
 
         log.info("[高级检索] 多路召回: {} 个文档", recalledDocs.size());
 
-        // 2. 重排序（精排）
-        List<Document> rerankedDocs = reranker.rerankByRules(query, recalledDocs, topK);
+        // 3. 重排序（精排）
+        List<Document> rerankedDocs = reranker.rerankByRules(retrievalQuery, recalledDocs, topK);
 
         log.info("[高级检索] 重排序完成，返回前 {} 个结果", rerankedDocs.size());
 
-        // 3. 记录分数信息
+        // 4. 记录分数信息
         rerankedDocs.forEach(doc -> {
             Double rrfScore = (Double) doc.getMetadata().get("rrf_score");
             Double ruleScore = (Double) doc.getMetadata().get("rule_score");
@@ -185,7 +196,7 @@ public class AdvancedRetrievalService {
     }
 
     /**
-     * 执行智能检索（根据查询自动选择是否使用HyDE）
+     * 执行智能检索（查询改写 + 根据查询自动选择是否使用HyDE）
      *
      * @param query 用户查询
      * @param knowledgeBaseId 知识库ID
@@ -195,16 +206,24 @@ public class AdvancedRetrievalService {
     public List<Document> smartRetrieve(String query, String knowledgeBaseId, int topK) {
         log.info("[智能检索] 开始，查询: {}, 知识库: {}, topK: {}", query, knowledgeBaseId, topK);
 
-        // 判断是否使用HyDE
-        boolean useHyde = hydeService.shouldUseHyde(query);
+        // 1. 执行查询改写
+        String processedQuery = query;
+        if (queryRewriterService.shouldRewrite(query)) {
+            log.info("[智能检索] 执行查询改写");
+            QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
+            processedQuery = rewrittenQuery.getEnhancedQuery();
+        }
+
+        // 2. 判断是否使用HyDE
+        boolean useHyde = hydeService.shouldUseHyde(processedQuery);
         log.info("[智能检索] 是否使用HyDE: {}", useHyde);
 
         if (useHyde) {
             // 使用HyDE检索
-            return hydeService.retrieveWithHyde(query, knowledgeBaseId, topK);
+            return hydeService.retrieveWithHyde(processedQuery, knowledgeBaseId, topK);
         } else {
             // 使用普通检索
-            return retrieve(query, knowledgeBaseId, topK);
+            return retrieve(processedQuery, knowledgeBaseId, topK);
         }
     }
 

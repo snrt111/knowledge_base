@@ -6,6 +6,7 @@ import com.snrt.knowledgebase.model.ChatModelFactory;
 import com.snrt.knowledgebase.service.RAGCacheManager;
 import com.snrt.knowledgebase.service.retrieval.CrossEncoderReranker;
 import com.snrt.knowledgebase.service.retrieval.MultiRetriever;
+import com.snrt.knowledgebase.service.retrieval.QueryRewriterService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -39,6 +40,7 @@ public class HydeService {
     private final RAGCacheManager ragCacheManager;
     private final MultiRetriever multiRetriever;
     private final CrossEncoderReranker reranker;
+    private final QueryRewriterService queryRewriterService;
 
     // L1: 本地缓存 - 假设答案缓存
     private Cache<String, String> hypotheticalAnswerCache;

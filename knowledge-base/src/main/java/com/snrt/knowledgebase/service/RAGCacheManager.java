@@ -51,6 +51,7 @@ public class RAGCacheManager {
     private static final String REDIS_KEY_PREFIX = "rag:search:";
     private static final String REDIS_RESPONSE_PREFIX = "rag:response:";
     private static final String REDIS_HYDE_PREFIX = "rag:hyde:";
+    private static final String REDIS_REWRITE_PREFIX = "rag:rewrite:";
     private static final Duration REDIS_TTL = Duration.ofMinutes(10);
     private static final Duration LOCAL_TTL = Duration.ofMinutes(5);
 
@@ -243,6 +244,40 @@ public class RAGCacheManager {
         return Optional.empty();
     }
 
+    // ==================== 查询改写缓存 (L2 Redis) ====================
+
+    public void cacheRewrittenQuery(String query, Object rewrittenQuery) {
+        String semanticKey = generateSemanticKey(query);
+        String cacheKey = REDIS_REWRITE_PREFIX + semanticKey;
+
+        try {
+            String json = objectMapper.writeValueAsString(rewrittenQuery);
+            redisTemplate.opsForValue().set(cacheKey, json, Duration.ofMinutes(10));
+            log.debug("查询改写结果缓存已保存: key={}", cacheKey);
+        } catch (Exception e) {
+            log.warn("查询改写结果缓存保存失败: {}", e.getMessage());
+        }
+    }
+
+    public Optional<com.snrt.knowledgebase.service.retrieval.QueryRewriterService.RewrittenQuery> getCachedRewrittenQuery(String query) {
+        String semanticKey = generateSemanticKey(query);
+        String cacheKey = REDIS_REWRITE_PREFIX + semanticKey;
+
+        try {
+            String json = redisTemplate.opsForValue().get(cacheKey);
+            if (json != null) {
+                com.snrt.knowledgebase.service.retrieval.QueryRewriterService.RewrittenQuery result = 
+                    objectMapper.readValue(json, com.snrt.knowledgebase.service.retrieval.QueryRewriterService.RewrittenQuery.class);
+                log.debug("查询改写结果缓存命中: key={}", cacheKey);
+                return Optional.of(result);
+            }
+        } catch (Exception e) {
+            log.warn("查询改写结果缓存读取失败: {}", e.getMessage());
+        }
+
+        return Optional.empty();
+    }
+
     // ==================== 缓存统计 ====================
 
     /**
@@ -304,6 +339,7 @@ public class RAGCacheManager {
             long searchResultCount = countRedisKeys(REDIS_KEY_PREFIX + "*");
             long chatResponseCount = countRedisKeys(REDIS_RESPONSE_PREFIX + "*");
             long hydeCount = countRedisKeys(REDIS_HYDE_PREFIX + "*");
+            long rewriteCount = countRedisKeys(REDIS_REWRITE_PREFIX + "*");
 
             long redisHits = redisHitCount.get();
             long redisMisses = redisMissCount.get();
@@ -315,7 +351,8 @@ public class RAGCacheManager {
                     .searchResultKeyCount(searchResultCount)
                     .chatResponseKeyCount(chatResponseCount)
                     .hydeKeyCount(hydeCount)
-                    .totalKeyCount(searchResultCount + chatResponseCount + hydeCount)
+                    .rewriteKeyCount(rewriteCount)
+                    .totalKeyCount(searchResultCount + chatResponseCount + hydeCount + rewriteCount)
                     .memoryUsage(null) // Redis内存使用需要额外配置
                     .build();
         } catch (Exception e) {
@@ -415,11 +452,12 @@ public class RAGCacheManager {
                 localSearchStats.getStatus());
 
         CacheStatsDTO.RedisCacheStats redisStats = stats.getRedisCacheStats();
-        log.info("Redis缓存 - 连接状态: {}, 检索结果键: {}, 聊天响应键: {}, HyDE键: {}",
+        log.info("Redis缓存 - 连接状态: {}, 检索结果键: {}, 聊天响应键: {}, HyDE键: {}, 查询改写键: {}",
                 redisStats.getConnected() ? "正常" : "异常",
                 redisStats.getSearchResultKeyCount(),
                 redisStats.getChatResponseKeyCount(),
-                redisStats.getHydeKeyCount());
+                redisStats.getHydeKeyCount(),
+                redisStats.getRewriteKeyCount());
     }
 
     // ==================== 序列化/反序列化 ====================
