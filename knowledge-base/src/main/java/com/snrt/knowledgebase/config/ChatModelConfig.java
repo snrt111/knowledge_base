@@ -1,6 +1,6 @@
 package com.snrt.knowledgebase.config;
 
-import com.snrt.knowledgebase.constants.Constants;
+import com.snrt.knowledgebase.common.constants.Constants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.context.annotation.Bean;

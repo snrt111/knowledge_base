@@ -1,11 +1,11 @@
 package com.snrt.knowledgebase.controller;
 
-import com.snrt.knowledgebase.dto.ApiResponse;
-import com.snrt.knowledgebase.dto.KnowledgeBaseDTO;
-import com.snrt.knowledgebase.dto.PageResult;
-import com.snrt.knowledgebase.dto.request.CreateKnowledgeBaseRequest;
-import com.snrt.knowledgebase.dto.request.UpdateKnowledgeBaseRequest;
-import com.snrt.knowledgebase.service.KnowledgeBaseService;
+import com.snrt.knowledgebase.common.response.ApiResponse;
+import com.snrt.knowledgebase.domain.knowledge.dto.KnowledgeBaseDTO;
+import com.snrt.knowledgebase.common.response.PageResult;
+import com.snrt.knowledgebase.domain.knowledge.dto.CreateKnowledgeBaseRequest;
+import com.snrt.knowledgebase.domain.knowledge.dto.UpdateKnowledgeBaseRequest;
+import com.snrt.knowledgebase.domain.knowledge.service.KnowledgeBaseService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

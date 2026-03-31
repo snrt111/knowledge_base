@@ -1,8 +1,8 @@
 package com.snrt.knowledgebase.controller;
 
-import com.snrt.knowledgebase.dto.ApiResponse;
-import com.snrt.knowledgebase.dto.CacheStatsDTO;
-import com.snrt.knowledgebase.service.RAGCacheManager;
+import com.snrt.knowledgebase.common.response.ApiResponse;
+import com.snrt.knowledgebase.common.response.CacheStatsDTO;
+import com.snrt.knowledgebase.domain.document.service.RAGCacheManager;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

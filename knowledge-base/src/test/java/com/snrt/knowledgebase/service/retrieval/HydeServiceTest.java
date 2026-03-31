@@ -1,7 +1,6 @@
 package com.snrt.knowledgebase.service.retrieval;
 
-import com.snrt.knowledgebase.model.ChatModelFactory;
-import com.snrt.knowledgebase.service.RAGCacheManager;
+import com.snrt.knowledgebase.infrastructure.retrieval.HydeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Autowired;

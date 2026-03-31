@@ -1,10 +1,14 @@
 package com.snrt.knowledgebase.controller;
 
-import com.snrt.knowledgebase.dto.*;
-import com.snrt.knowledgebase.dto.request.BatchDocumentRequest;
-import com.snrt.knowledgebase.exception.DocumentException;
-import com.snrt.knowledgebase.service.DocumentPreviewService;
-import com.snrt.knowledgebase.service.DocumentService;
+import com.snrt.knowledgebase.common.response.ApiResponse;
+import com.snrt.knowledgebase.common.response.BatchOperationResult;
+import com.snrt.knowledgebase.common.response.PageResult;
+import com.snrt.knowledgebase.domain.document.dto.DocumentDTO;
+import com.snrt.knowledgebase.domain.document.dto.DocumentPreviewDTO;
+import com.snrt.knowledgebase.domain.document.dto.BatchDocumentRequest;
+import com.snrt.knowledgebase.common.exception.DocumentException;
+import com.snrt.knowledgebase.domain.document.service.DocumentPreviewService;
+import com.snrt.knowledgebase.domain.document.service.DocumentService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;

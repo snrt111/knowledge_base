@@ -2,9 +2,14 @@ package com.snrt.knowledgebase.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.snrt.knowledgebase.dto.*;
-import com.snrt.knowledgebase.dto.request.CreateChatSessionRequest;
-import com.snrt.knowledgebase.service.ChatService;
+import com.snrt.knowledgebase.common.response.ApiResponse;
+import com.snrt.knowledgebase.common.response.PageResult;
+import com.snrt.knowledgebase.domain.chat.dto.ChatMessageDTO;
+import com.snrt.knowledgebase.domain.chat.dto.ChatRequest;
+import com.snrt.knowledgebase.domain.chat.dto.ChatResponseDTO;
+import com.snrt.knowledgebase.domain.chat.dto.ChatSessionDTO;
+import com.snrt.knowledgebase.domain.chat.dto.CreateChatSessionRequest;
+import com.snrt.knowledgebase.domain.chat.service.ChatService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

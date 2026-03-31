@@ -1,6 +1,6 @@
 package com.snrt.knowledgebase.controller;
 
-import com.snrt.knowledgebase.dto.ApiResponse;
+import com.snrt.knowledgebase.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
