@@ -204,26 +204,7 @@ public class QueryRewriterService {
         return enhanced.toString();
     }
 
-    /**
-     * 检查查询是否需要改写
-     */
-    public boolean shouldRewrite(String query) {
-        // 基于查询长度和复杂度判断
-        int queryLength = query.length();
-        if (queryLength < 5) {
-            return false; // 太短的查询不需要改写
-        }
 
-        // 检查是否包含模糊词汇
-        String[] vagueWords = {"什么", "如何", "怎样", "为什么", "如何做", "怎么做"};
-        for (String word : vagueWords) {
-            if (query.contains(word)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * 查询改写结果类

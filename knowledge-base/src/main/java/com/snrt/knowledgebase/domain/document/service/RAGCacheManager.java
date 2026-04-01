@@ -169,7 +169,7 @@ public class RAGCacheManager {
                     cacheKey, results.size(), serializeDuration, redisDuration, totalDuration);
         } catch (Exception e) {
             long totalDuration = System.currentTimeMillis() - startTime;
-            log.warn("[检索结果缓存] Redis缓存保存失败，键: {}, 耗时: {}ms, 错误: {}", 
+            log.debug("[检索结果缓存] Redis缓存保存失败，键: {}, 耗时: {}ms, 错误: {}", 
                     cacheKey, totalDuration, e.getMessage());
         }
     }
@@ -218,7 +218,7 @@ public class RAGCacheManager {
         } catch (Exception e) {
             redisMissCount.incrementAndGet();
             long totalDuration = System.currentTimeMillis() - startTime;
-            log.warn("[检索结果缓存] Redis缓存读取失败，键: {}, 耗时: {}ms, 错误: {}", 
+            log.debug("[检索结果缓存] Redis缓存读取失败，键: {}, 耗时: {}ms, 错误: {}", 
                     cacheKey, totalDuration, e.getMessage());
         }
 
@@ -241,7 +241,7 @@ public class RAGCacheManager {
                     cacheKey, query.length(), answer.length(), duration);
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
-            log.warn("[HyDE缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
+            log.debug("[HyDE缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
                     cacheKey, duration, e.getMessage());
         }
     }
@@ -264,7 +264,7 @@ public class RAGCacheManager {
             }
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
-            log.warn("[HyDE缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
+            log.debug("[HyDE缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
                     cacheKey, duration, e.getMessage());
         }
 
@@ -289,7 +289,7 @@ public class RAGCacheManager {
                     cacheKey, query.length(), json.length(), serializeDuration, totalDuration);
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
-            log.warn("[查询改写缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
+            log.debug("[查询改写缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
                     cacheKey, duration, e.getMessage());
         }
     }
@@ -321,7 +321,7 @@ public class RAGCacheManager {
             }
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
-            log.warn("[查询改写缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
+            log.debug("[查询改写缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
                     cacheKey, duration, e.getMessage());
         }
 

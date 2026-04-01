@@ -59,11 +59,6 @@ public class AdvancedRetrievalService {
     }
 
     private String rewriteQueryIfNeed(String query, String traceId) {
-        if (!queryRewriterService.shouldRewrite(query)) {
-            log.info("[{}] [高级检索] 无需查询改写，使用原始查询: '{}'", traceId, query);
-            return query;
-        }
-
         Instant rewriteStart = Instant.now();
         QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
         String enhancedQuery = rewrittenQuery.getEnhancedQuery();
