@@ -60,6 +60,14 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(e.getErrorCode().getCode(), e.getMessage());
     }
 
+    @ExceptionHandler(KnowledgeGraphException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleKnowledgeGraphException(KnowledgeGraphException e, HttpServletRequest request) {
+        ExceptionContext context = buildExceptionContext(request, e);
+        exceptionLogger.logBusinessException(context, e);
+        return ApiResponse.error(e.getErrorCode().getCode(), e.getMessage());
+    }
+
     @ExceptionHandler(ExternalServiceException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     public ApiResponse<Void> handleExternalServiceException(ExternalServiceException e, HttpServletRequest request) {

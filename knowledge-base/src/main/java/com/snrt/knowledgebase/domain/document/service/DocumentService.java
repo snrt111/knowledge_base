@@ -97,11 +97,15 @@ public class DocumentService {
 
             Document saved = documentRepository.save(doc);
 
-            // 在事务提交后发送消息，确保消费者能查询到文档
+            log.info("[文档上传] 文档保存成功: id={}, name={}, knowledgeBaseId={}", 
+                    saved.getId(), saved.getName(), kb.getId());
+
             String finalOriginalFilename = originalFilename;
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
+                    log.info("[文档上传] 开始发送处理消息: documentId={}, knowledgeBaseId={}", 
+                            saved.getId(), kb.getId());
                     documentProcessProducer.sendDocumentProcessMessage(
                             saved.getId(),
                             saved.getName(),
@@ -111,7 +115,8 @@ public class DocumentService {
                             saved.getObjectName(),
                             saved.getType()
                     );
-                    log.info("文档上传成功: id={}, name={}, objectName={}", saved.getId(), finalOriginalFilename, storageResult.objectName());
+                    log.info("[文档上传] 消息发送成功: id={}, name={}, objectName={}, knowledgeBaseId={}", 
+                            saved.getId(), finalOriginalFilename, storageResult.objectName(), kb.getId());
                 }
             });
 
@@ -141,12 +146,16 @@ public class DocumentService {
 
         eventPublisher.publishStatusChanged(this, doc, oldStatus, Document.DocumentStatus.PROCESSING);
 
-        // 在事务提交后发送消息，确保消费者能查询到文档
+        log.info("[文档重新处理] 文档状态已更新: id={}, name={}, previousStatus={}, newStatus={}", 
+                doc.getId(), doc.getName(), oldStatus, Document.DocumentStatus.PROCESSING);
+
         String finalId = id;
         String finalOldStatus = oldStatus.toString();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                log.info("[文档重新处理] 开始发送处理消息: documentId={}, knowledgeBaseId={}", 
+                        doc.getId(), doc.getKnowledgeBase().getId());
                 documentProcessProducer.sendDocumentProcessMessage(
                         doc.getId(),
                         doc.getName(),
@@ -156,7 +165,8 @@ public class DocumentService {
                         doc.getObjectName(),
                         doc.getType()
                 );
-                log.info("已提交文档重新向量化: id={}, name={}, previousStatus={}", finalId, doc.getName(), finalOldStatus);
+                log.info("[文档重新处理] 消息发送成功: id={}, name={}, previousStatus={}", 
+                        finalId, doc.getName(), finalOldStatus);
             }
         });
 
@@ -167,17 +177,22 @@ public class DocumentService {
     public void deleteDocument(String id) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> DocumentException.notFound(id));
+        
+        log.info("[文档删除] 开始删除文档: id={}, name={}, knowledgeBaseId={}", 
+                doc.getId(), doc.getName(), doc.getKnowledgeBase().getId());
+        
         doc.setIsDeleted(true);
         documentRepository.save(doc);
 
         try {
             documentProcessingService.deleteDocumentFromVectorStore(id);
-            log.info("向量存储中删除成功: documentId={}", id);
+            log.info("[文档删除] 向量存储删除成功: documentId={}", id);
         } catch (Exception e) {
-            log.warn("向量存储中删除失败: documentId={}, error={}", id, e.getMessage());
+            log.warn("[文档删除] 向量存储删除失败: documentId={}, error={}", id, e.getMessage());
         }
 
         storageService.deleteFile(doc.getObjectName(), doc.getFilePath());
+        log.info("[文档删除] 文档删除成功: id={}, name={}", doc.getId(), doc.getName());
     }
 
     @Transactional(readOnly = true)
@@ -227,19 +242,19 @@ public class DocumentService {
                 try {
                     documentProcessingService.deleteDocumentFromVectorStore(id);
                 } catch (Exception e) {
-                    log.warn("向量存储中删除失败: documentId={}, error={}", id, e.getMessage());
+                    log.warn("[批量删除] 向量存储删除失败: documentId={}, error={}", id, e.getMessage());
                 }
 
                 storageService.deleteFile(doc.getObjectName(), doc.getFilePath());
 
                 successItems.add(documentMapper.toDTO(doc));
-                log.info("批量删除文档成功: id={}", id);
+                log.info("[批量删除] 文档删除成功: id={}, name={}", id, doc.getName());
             } catch (Exception e) {
                 failedItems.add(BatchOperationResult.FailedItem.builder()
                         .id(id)
                         .reason(e.getMessage())
                         .build());
-                log.error("批量删除文档失败: id={}, error={}", id, e.getMessage(), e);
+                log.error("[批量删除] 删除失败: id={}, error={}", id, e.getMessage(), e);
             }
         }
 
@@ -248,7 +263,7 @@ public class DocumentService {
         result.setSuccessItems(successItems);
         result.setFailedItems(failedItems);
 
-        log.info("批量删除文档完成: total={}, success={}, failed={}",
+        log.info("[批量删除] 批量删除完成: total={}, success={}, failed={}",
                 result.getTotal(), result.getSuccess(), result.getFailed());
         return result;
     }
@@ -281,6 +296,9 @@ public class DocumentService {
                     continue;
                 }
 
+                log.info("[批量重新处理] 开始处理: id={}, name={}, knowledgeBaseId={}", 
+                        doc.getId(), doc.getName(), doc.getKnowledgeBase().getId());
+                
                 storageService.ensureLocalFileForProcessing(doc);
                 documentProcessingService.deleteDocumentFromVectorStore(id);
 
@@ -290,12 +308,15 @@ public class DocumentService {
 
                 eventPublisher.publishStatusChanged(this, doc, oldStatus, Document.DocumentStatus.PROCESSING);
 
-                // 在事务提交后发送消息，确保消费者能查询到文档
+                log.info("[批量重新处理] 文档状态已更新: id={}, previousStatus={}, newStatus={}", 
+                        doc.getId(), oldStatus, Document.DocumentStatus.PROCESSING);
+
                 Document finalDoc = doc;
                 String finalId = id;
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
+                        log.info("[批量重新处理] 开始发送处理消息: documentId={}", finalDoc.getId());
                         documentProcessProducer.sendDocumentProcessMessage(
                                 finalDoc.getId(),
                                 finalDoc.getName(),
@@ -305,7 +326,7 @@ public class DocumentService {
                                 finalDoc.getObjectName(),
                                 finalDoc.getType()
                         );
-                        log.info("批量重新处理文档成功: id={}", finalId);
+                        log.info("[批量重新处理] 消息发送成功: id={}", finalId);
                     }
                 });
 
@@ -315,7 +336,7 @@ public class DocumentService {
                         .id(id)
                         .reason(e.getMessage())
                         .build());
-                log.error("批量重新处理文档失败: id={}, error={}", id, e.getMessage(), e);
+                log.error("[批量重新处理] 处理失败: id={}, error={}", id, e.getMessage(), e);
             }
         }
 
@@ -324,7 +345,7 @@ public class DocumentService {
         result.setSuccessItems(successItems);
         result.setFailedItems(failedItems);
 
-        log.info("批量重新处理文档完成: total={}, success={}, failed={}",
+        log.info("[批量重新处理] 批量重新处理完成: total={}, success={}, failed={}",
                 result.getTotal(), result.getSuccess(), result.getFailed());
         return result;
     }

@@ -28,6 +28,11 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  neo4j:
+    uri: bolt://localhost:7687
+    username: neo4j
+    password: password
+    enabled: true
 
     # Redis配置
   data:
@@ -92,6 +97,7 @@ spring:
 chat:
   model:
     provider: ollama
+    light-model-provider: ollama
 
 # MinIO 配置
 minio:
@@ -157,6 +163,3 @@ retrieval:
   vector:
     similarity-threshold: 0.3
     default-top-k: 10
-
-
-

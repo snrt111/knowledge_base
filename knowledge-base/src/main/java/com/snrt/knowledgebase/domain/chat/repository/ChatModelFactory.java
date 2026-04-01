@@ -2,6 +2,7 @@ package com.snrt.knowledgebase.domain.chat.repository;
 
 import com.snrt.knowledgebase.common.constants.Constants;
 import com.snrt.knowledgebase.common.exception.ValidationException;
+import com.snrt.knowledgebase.config.ChatModelProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ChatModelFactory {
 
     private final List<ChatModelProvider> providerList;
+    private final ChatModelProperties chatModelProperties;
     private final Map<String, ChatModelProvider> providers = new ConcurrentHashMap<>();
 
     @PostConstruct
@@ -37,6 +39,12 @@ public class ChatModelFactory {
 
     public ChatModel getDefaultModel() {
         return getModel(Constants.Chat.DEFAULT_PROVIDER);
+    }
+
+    public ChatModel getLightModel() {
+        String lightProvider = chatModelProperties.getLightModelProvider();
+        log.debug("使用轻量模型: provider={}", lightProvider);
+        return getModel(lightProvider);
     }
 
     public boolean isSupported(String provider) {

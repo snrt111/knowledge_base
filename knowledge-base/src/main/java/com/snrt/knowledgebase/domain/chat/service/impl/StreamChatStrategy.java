@@ -4,6 +4,7 @@ import com.snrt.knowledgebase.domain.chat.dto.ChatRequest;
 import com.snrt.knowledgebase.domain.chat.dto.ChatResponseDTO;
 import com.snrt.knowledgebase.domain.chat.dto.StreamChatResponse;
 import com.snrt.knowledgebase.domain.chat.service.ChatStrategy;
+import com.snrt.knowledgebase.domain.chat.service.StreamChatExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -14,7 +15,7 @@ import reactor.core.publisher.Flux;
 @RequiredArgsConstructor
 public class StreamChatStrategy implements ChatStrategy {
 
-    private final ChatStrategyHelper chatStrategyHelper;
+    private final StreamChatExecutor streamChatExecutor;
 
     @Override
     public ChatResponseDTO chat(ChatRequest request) {
@@ -23,7 +24,7 @@ public class StreamChatStrategy implements ChatStrategy {
 
     @Override
     public Flux<StreamChatResponse> streamChat(ChatRequest request) {
-        return chatStrategyHelper.executeStreamChat(request);
+        return streamChatExecutor.executeStreamChat(request);
     }
 
     @Override

@@ -23,6 +23,11 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
+  neo4j:
+    uri: bolt://localhost:7687
+    username: neo4j
+    password: password
+    enabled: true
 
   # Redis配置
   data:
@@ -51,6 +56,7 @@ spring:
 chat:
   model:
     provider: ollama
+    light-model-provider: ollama
 
 # MinIO 配置
 minio:
@@ -80,3 +86,4 @@ logging:
   level:
     com.snrt.knowledgebase: DEBUG
     org.springframework.ai: DEBUG
+    org.neo4j: DEBUG

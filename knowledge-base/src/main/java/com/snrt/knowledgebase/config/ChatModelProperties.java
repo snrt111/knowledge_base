@@ -10,4 +10,10 @@ import org.springframework.stereotype.Component;
 public class ChatModelProperties {
 
     private String provider = "ollama";
+
+    private String lightModelProvider;
+
+    public String getLightModelProvider() {
+        return lightModelProvider != null ? lightModelProvider : provider;
+    }
 }

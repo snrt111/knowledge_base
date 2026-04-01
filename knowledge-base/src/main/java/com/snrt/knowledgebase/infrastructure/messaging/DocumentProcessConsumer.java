@@ -34,22 +34,28 @@ public class DocumentProcessConsumer {
     @Transactional
     public void handleDocumentProcess(DocumentProcessMessage message) {
         String documentId = message.getDocumentId();
-        log.info("收到文档处理消息: documentId={}, documentName={}, retryCount={}",
-                documentId, message.getDocumentName(), message.getRetryCount());
+        log.info("[文档处理] 收到消息: documentId={}, documentName={}, knowledgeBaseId={}, knowledgeBaseName={}, retryCount={}",
+                documentId, message.getDocumentName(), message.getKnowledgeBaseId(), 
+                message.getKnowledgeBaseName(), message.getRetryCount());
 
         try {
+            log.debug("[文档处理] 开始查询文档: documentId={}", documentId);
             Document document = documentRepository.findByIdAndIsDeletedFalseWithKnowledgeBase(documentId)
                     .orElse(null);
 
             if (document == null) {
-                log.warn("文档不存在或已被删除，跳过处理: documentId={}", documentId);
+                log.warn("[文档处理] 文档不存在或已被删除，跳过处理: documentId={}", documentId);
                 return;
             }
 
+            log.info("[文档处理] 文档查询成功: id={}, name={}, filePath={}", 
+                    document.getId(), document.getName(), document.getFilePath());
+            
             Path filePath = storageService.ensureLocalFileForProcessing(document);
             String knowledgeBaseId = document.getKnowledgeBase().getId();
             String knowledgeBaseName = document.getKnowledgeBase().getName();
 
+            log.debug("[文档处理] 开始处理文档: filePath={}, knowledgeBaseId={}", filePath, knowledgeBaseId);
             DocumentProcessor processor = processorFactory.getProcessor(document.getType());
             processor.processDocument(filePath, document.getId(), document.getName(),
                     knowledgeBaseId, knowledgeBaseName);
@@ -60,10 +66,11 @@ public class DocumentProcessConsumer {
 
             eventPublisher.publishStatusChanged(this, document, oldStatus, Document.DocumentStatus.COMPLETED);
 
-            log.info("文档处理完成: id={}, name={}", document.getId(), document.getName());
+            log.info("[文档处理] 处理完成: id={}, name={}, status={}, knowledgeBaseId={}", 
+                    document.getId(), document.getName(), document.getStatus(), knowledgeBaseId);
 
         } catch (Exception e) {
-            log.error("文档处理失败: id={}, error={}", documentId, e.getMessage(), e);
+            log.error("[文档处理] 处理失败: documentId={}, error={}", message.getDocumentId(), e.getMessage(), e);
             handleProcessFailure(message, e);
         }
     }

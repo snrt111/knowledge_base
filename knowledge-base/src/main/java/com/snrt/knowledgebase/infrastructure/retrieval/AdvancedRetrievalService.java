@@ -1,280 +1,285 @@
 package com.snrt.knowledgebase.infrastructure.retrieval;
 
-import com.snrt.knowledgebase.domain.document.dto.DocumentSourceDTO;
+import com.snrt.knowledgebase.config.RetrievalConfig;
+import com.snrt.knowledgebase.domain.knowledgegraph.service.DocumentKnowledgeGraphService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
-
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.UUID;
 
-/**
- * 高级检索服务
- *
- * 整合多路召回和重排序，提供高质量的检索结果
- *
- * 检索流程：
- * 1. 多路召回（向量 + 关键词）
- * 2. 粗排（RRF融合）
- * 3. 精排（Cross-Encoder重排序）
- * 4. 结果格式化
- *
- * @author SNRT
- * @since 1.0
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdvancedRetrievalService {
 
+    private static final String[] COMPLEX_KEYWORDS = {"技术", "产品", "服务", "功能", "模块", "组件", "系统"};
+    private static final String[] SIMPLE_KEYWORDS = {"AI", "机器学习", "深度学习", "NLP", "LLM"};
+
     private final MultiRetriever multiRetriever;
     private final CrossEncoderReranker reranker;
     private final HydeService hydeService;
     private final QueryRewriterService queryRewriterService;
+    private final DocumentKnowledgeGraphService documentKnowledgeGraphService;
+    private final RetrievalConfig retrievalConfig;
 
-    /**
-     * 执行高级检索（查询改写 + 多路召回 + 重排序）
-     *
-     * @param query 用户查询
-     * @param knowledgeBaseId 知识库ID
-     * @param topK 最终返回结果数量
-     * @return 检索结果文档列表
-     */
     public List<Document> retrieve(String query, String knowledgeBaseId, int topK) {
-        String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
-        java.time.Instant start = java.time.Instant.now();
-        log.info("[{}] [高级检索] 开始，查询: '{}', 知识库: {}, topK: {}", traceId, query, knowledgeBaseId, topK);
+        String traceId = generateTraceId();
+        Instant start = Instant.now();
 
-        // 1. 查询改写
-        String retrievalQuery = query;
-        if (queryRewriterService.shouldRewrite(query)) {
-            log.info("[{}] [高级检索] 执行查询改写", traceId);
-            Instant rewriteStart = java.time.Instant.now();
-            QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
-            retrievalQuery = rewrittenQuery.getEnhancedQuery();
-            java.time.Duration rewriteDuration = java.time.Duration.between(rewriteStart, java.time.Instant.now());
-            log.info("[{}] [高级检索] 查询改写完成，耗时: {}ms, 原查询: '{}', 增强查询: '{}'", 
-                    traceId, rewriteDuration.toMillis(), query, retrievalQuery);
-        } else {
-            log.info("[{}] [高级检索] 无需查询改写，使用原始查询: '{}'", traceId, query);
-        }
+        log.info("[{}] [高级检索] 开始，查询: '{}', 知识库: {}, topK: {}",
+                traceId, query, knowledgeBaseId, topK);
+        // 查询改写
+        String processedQuery = rewriteQueryIfNeed(query, traceId);
+        // 召回
+        List<Document> recalledDocs = recallDocuments(processedQuery, knowledgeBaseId, topK, traceId);
+        // 知识图谱召回
+        List<Document> kgDocs = retrieveFromKnowledgeGraph(processedQuery, knowledgeBaseId, traceId);
+        // 合并召回结果
+        List<Document> allRecalledDocs = mergeRecalledDocs(recalledDocs, kgDocs, traceId);
+        // rerank
+        List<Document> rerankedDocs = rerankDocuments(processedQuery, allRecalledDocs, topK, traceId);
+        // 返回结果
+        logResultDetails(rerankedDocs, traceId);
 
-        // 2. 多路召回（获取更多候选）
-        int recallCount = topK * 3; // 召回3倍数量的候选
-        log.info("[{}] [高级检索] 开始多路召回，召回数量: {}", traceId, recallCount);
-        Instant recallStart = java.time.Instant.now();
-        List<Document> recalledDocs = multiRetriever.retrieve(retrievalQuery, knowledgeBaseId, recallCount);
-        java.time.Duration recallDuration = java.time.Duration.between(recallStart, java.time.Instant.now());
+        log.info("[{}] [高级检索] 完成，总耗时: {}ms, 最终返回文档数: {}",
+                traceId, Duration.between(start, Instant.now()).toMillis(), rerankedDocs.size());
 
-        if (recalledDocs.isEmpty()) {
-            log.warn("[{}] [高级检索] 未召回任何文档，耗时: {}ms", traceId, recallDuration.toMillis());
-            return List.of();
-        }
-
-        log.info("[{}] [高级检索] 多路召回完成，耗时: {}ms, 召回文档数: {}", 
-                traceId, recallDuration.toMillis(), recalledDocs.size());
-
-        // 3. 重排序（精排）
-        log.info("[{}] [高级检索] 开始重排序，输入文档数: {}, 目标返回数: {}", traceId, recalledDocs.size(), topK);
-        Instant rerankStart = java.time.Instant.now();
-        List<Document> rerankedDocs = reranker.rerankByRules(retrievalQuery, recalledDocs, topK);
-        java.time.Duration rerankDuration = java.time.Duration.between(rerankStart, java.time.Instant.now());
-
-        log.info("[{}] [高级检索] 重排序完成，耗时: {}ms, 返回前 {} 个结果", 
-                traceId, rerankDuration.toMillis(), rerankedDocs.size());
-
-        // 4. 记录分数信息
-        log.debug("[{}] [高级检索] 重排序结果详情:", traceId);
-        for (int i = 0; i < Math.min(rerankedDocs.size(), 5); i++) {
-            Document doc = rerankedDocs.get(i);
-            String docName = getDocumentName(doc);
-            Double rrfScore = (Double) doc.getMetadata().get("rrf_score");
-            Double ruleScore = (Double) doc.getMetadata().get("rule_score");
-            log.debug("[{}] [高级检索] 文档{}: {}, RRF分数: {:.3f}, 规则分数: {:.3f}",
-                    traceId, i+1, docName, rrfScore, ruleScore);
-        }
-
-        java.time.Duration totalDuration = java.time.Duration.between(start, java.time.Instant.now());
-        log.info("[{}] [高级检索] 完成，总耗时: {}ms, 最终返回文档数: {}", 
-                traceId, totalDuration.toMillis(), rerankedDocs.size());
         return rerankedDocs;
     }
 
-    /**
-     * 执行检索并转换为 DocumentSourceDTO
-     */
-    public List<DocumentSourceDTO> retrieveAndConvert(String query, String knowledgeBaseId, int topK) {
-        List<Document> documents = retrieve(query, knowledgeBaseId, topK);
-        return convertToDocumentSources(documents);
+    private String generateTraceId() {
+        return UUID.randomUUID().toString().substring(0, 8);
     }
 
-    /**
-     * 将 Document 转换为 DocumentSourceDTO
-     */
-    private List<DocumentSourceDTO> convertToDocumentSources(List<Document> documents) {
-        // 按文档ID分组
-        java.util.Map<String, List<Document>> docsById = documents.stream()
-                .collect(Collectors.groupingBy(this::getDocumentId));
+    private String rewriteQueryIfNeed(String query, String traceId) {
+        if (!queryRewriterService.shouldRewrite(query)) {
+            log.info("[{}] [高级检索] 无需查询改写，使用原始查询: '{}'", traceId, query);
+            return query;
+        }
 
-        return docsById.entrySet().stream()
-                .map(entry -> createDocumentSource(entry.getKey(), entry.getValue()))
-                .sorted((s1, s2) -> {
-                    Double score1 = s1.getScore();
-                    Double score2 = s2.getScore();
-                    if (score1 == null && score2 == null) return 0;
-                    if (score1 == null) return 1;
-                    if (score2 == null) return -1;
-                    return Double.compare(score2, score1);
-                })
-                .collect(Collectors.toList());
+        Instant rewriteStart = Instant.now();
+        QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
+        String enhancedQuery = rewrittenQuery.getEnhancedQuery();
+        Instant rewriteEnd = Instant.now();
+
+        log.info("[{}] [高级检索] 查询改写完成，耗时: {}ms, 原查询: '{}', 增强查询: '{}'",
+                traceId, Duration.between(rewriteStart, rewriteEnd).toMillis(), query, enhancedQuery);
+
+        return enhancedQuery;
     }
 
-    /**
-     * 创建文档来源DTO
-     */
-    private DocumentSourceDTO createDocumentSource(String docId, List<Document> chunks) {
-        Document firstChunk = chunks.get(0);
+    private List<Document> recallDocuments(String query, String knowledgeBaseId, int topK, String traceId) {
+        int recallCount = topK * retrievalConfig.getMultiRetrieve().getVectorRecallMultiplier();
 
-        String docName = getMetadataString(firstChunk, "document_name", "未知文档");
-        String kbName = getMetadataString(firstChunk, "knowledge_base_name", "未知知识库");
+        log.info("[{}] [高级检索] 开始多路召回，召回数量: {}", traceId, recallCount);
+        Instant recallStart = Instant.now();
 
-        // 计算综合分数
-        double score = chunks.stream()
-                .mapToDouble(doc -> {
-                    Double rrf = (Double) doc.getMetadata().get("rrf_score");
-                    Double rule = (Double) doc.getMetadata().get("rule_score");
-                    double s = 0;
-                    if (rrf != null) s += rrf * 0.3;
-                    if (rule != null) s += rule * 0.7;
-                    return s;
-                })
-                .max()
-                .orElse(0.0);
+        List<Document> recalledDocs = multiRetriever.retrieve(query, knowledgeBaseId, recallCount);
 
-        // 提取片段
-        List<String> snippets = chunks.stream()
-                .map(Document::getText)
-                .filter(text -> text != null && !text.isEmpty())
-                .limit(3)
-                .collect(Collectors.toList());
+        Instant recallEnd = Instant.now();
+        log.info("[{}] [高级检索] 向量+关键词召回完成，耗时: {}ms, 召回文档数: {}",
+                traceId, Duration.between(recallStart, recallEnd).toMillis(), recalledDocs.size());
 
-        return DocumentSourceDTO.builder()
-                .documentId("unknown".equals(docId) ? null : docId)
-                .documentName(docName)
-                .knowledgeBaseName(kbName)
-                .score(score)
-                .snippet(snippets.isEmpty() ? "" : snippets.get(0))
-                .snippets(snippets)
-                .build();
+        return recalledDocs;
     }
 
-    /**
-     * 获取文档ID
-     */
-    private String getDocumentId(Document doc) {
-        Object docId = doc.getMetadata().get("document_id");
-        return docId != null ? docId.toString() : "unknown";
+    private List<Document> retrieveFromKnowledgeGraph(String query, String knowledgeBaseId, String traceId) {
+        log.debug("[{}] [知识图谱检索] 开始从知识图谱检索: '{}'", traceId, query);
+
+        try {
+            List<String> entities = extractEntitiesFromQuery(query);
+            log.debug("[{}] [知识图谱检索] 从查询中提取实体: {}", traceId, entities);
+
+            return buildKnowledgeGraphDocuments(entities, knowledgeBaseId, traceId);
+        } catch (Exception e) {
+            log.error("[{}] [知识图谱检索] 检索失败", traceId, e);
+            return Collections.emptyList();
+        }
     }
 
-    /**
-     * 获取文档名称
-     */
-    private String getDocumentName(Document doc) {
-        Object docName = doc.getMetadata().get("document_name");
-        return docName != null ? docName.toString() : "unknown";
+    private List<String> extractEntitiesFromQuery(String query) {
+        List<String> entities = extractWithComplexKeywords(query);
+
+        if (entities.isEmpty()) {
+            entities = extractWithSimpleKeywords(query);
+        }
+
+        return entities;
     }
 
-    /**
-     * 获取元数据字符串
-     */
-    private String getMetadataString(Document doc, String key, String defaultValue) {
+    private List<String> extractWithComplexKeywords(String query) {
+        List<String> entities = new ArrayList<>();
+
+        for (String keyword : COMPLEX_KEYWORDS) {
+            int index = query.indexOf(keyword);
+            if (index > 0) {
+                String entity = query.substring(0, index + keyword.length());
+                entities.add(entity);
+            }
+        }
+
+        return entities;
+    }
+
+    private List<String> extractWithSimpleKeywords(String query) {
+        List<String> entities = new ArrayList<>();
+
+        for (String keyword : SIMPLE_KEYWORDS) {
+            if (query.contains(keyword)) {
+                entities.add(keyword);
+            }
+        }
+
+        return entities;
+    }
+
+    private List<Document> buildKnowledgeGraphDocuments(List<String> entities, String knowledgeBaseId, String traceId) {
+        List<Document> kgDocs = new ArrayList<>();
+
+        for (String entity : entities) {
+            List<String> docUuids = documentKnowledgeGraphService.getDocumentsByEntity(entity, knowledgeBaseId);
+            log.debug("[{}] [知识图谱检索] 实体 '{}' 相关文档: {}", traceId, entity, docUuids);
+
+            docUuids.forEach(docUuid -> {
+                Document kgDoc = new Document(docUuid);
+                kgDoc.getMetadata().put("document_id", docUuid);
+                kgDoc.getMetadata().put("document_name", "实体: " + entity);
+                kgDoc.getMetadata().put("kg_score", 1.0);
+                kgDoc.getMetadata().put("kg_entity", entity);
+                kgDoc.getMetadata().put("retrieval_source", "knowledge_graph");
+                kgDocs.add(kgDoc);
+            });
+        }
+
+        log.debug("[{}] [知识图谱检索] 完成，返回文档数: {}", traceId, kgDocs.size());
+        return kgDocs;
+    }
+
+    private List<Document> mergeRecalledDocs(List<Document> recalledDocs, List<Document> kgDocs, String traceId) {
+        List<Document> allRecalledDocs = new ArrayList<>(recalledDocs);
+
+        kgDocs.forEach(doc -> {
+            if (allRecalledDocs.stream().noneMatch(d -> getDocumentId(d).equals(getDocumentId(doc)))) {
+                allRecalledDocs.add(doc);
+                log.debug("[{}] [高级检索] 添加知识图谱召回文档: {}", traceId, getDocumentName(doc));
+            }
+        });
+
+        log.info("[{}] [高级检索] 融合召回完成，总候选数: {}", traceId, allRecalledDocs.size());
+        return allRecalledDocs;
+    }
+
+    private List<Document> rerankDocuments(String query, List<Document> docs, int topK, String traceId) {
+        log.info("[{}] [高级检索] 开始重排序，输入文档数: {}, 目标返回数: {}",
+                traceId, docs.size(), topK);
+
+        Instant rerankStart = Instant.now();
+        List<Document> rerankedDocs = reranker.rerankByRules(query, docs, topK);
+        Instant rerankEnd = Instant.now();
+
+        log.info("[{}] [高级检索] 重排序完成，耗时: {}ms, 返回前 {} 个结果",
+                traceId, Duration.between(rerankStart, rerankEnd).toMillis(), rerankedDocs.size());
+
+        return rerankedDocs;
+    }
+
+    private void logResultDetails(List<Document> documents, String traceId) {
+        log.debug("[{}] [高级检索] 重排序结果详情:", traceId);
+
+        int logCount = Math.min(documents.size(), 5);
+        for (int i = 0; i < logCount; i++) {
+            Document doc = documents.get(i);
+            String docName = getDocumentName(doc);
+            Double rrfScore = getMetadataDouble(doc, "rrf_score");
+            Double ruleScore = getMetadataDouble(doc, "rule_score");
+            Double kgScore = getMetadataDouble(doc, "kg_score");
+
+            log.debug("[{}] [高级检索] 文档{}: {}, RRF分数: {:.3f}, 规则分数: {:.3f}, 知识图谱分数: {:.3f}",
+                    traceId, i + 1, docName, rrfScore, ruleScore, kgScore);
+        }
+    }
+
+    private Double getMetadataDouble(Document doc, String key) {
         Object value = doc.getMetadata().get(key);
-        return value != null ? value.toString() : defaultValue;
+        return value instanceof Double ? (Double) value : 0.0;
     }
 
-    /**
-     * 估算检索质量分数
-     * 用于判断是否需要扩展查询或提示用户
-     */
-    public double estimateRetrievalQuality(List<Document> documents) {
-        if (documents == null || documents.isEmpty()) {
-            return 0.0;
-        }
 
-        // 基于 top 结果的分数计算质量
-        double topScore = documents.stream()
-                .mapToDouble(doc -> {
-                    Double ruleScore = (Double) doc.getMetadata().get("rule_score");
-                    return ruleScore != null ? ruleScore : 0.0;
-                })
-                .max()
-                .orElse(0.0);
 
-        // 归一化到 0-1
-        return Math.min(topScore / 20.0, 1.0);
-    }
-
-    /**
-     * 执行智能检索（查询改写 + 根据查询自动选择是否使用HyDE）
-     *
-     * @param query 用户查询
-     * @param knowledgeBaseId 知识库ID
-     * @param topK 最终返回结果数量
-     * @return 检索结果文档列表
-     */
     public List<Document> smartRetrieve(String query, String knowledgeBaseId, int topK) {
-        String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
-        java.time.Instant start = java.time.Instant.now();
-        log.info("[{}] [智能检索] 开始，查询: '{}', 知识库: {}, topK: {}", traceId, query, knowledgeBaseId, topK);
+        String traceId = generateTraceId();
+        Instant start = Instant.now();
 
-        // 1. 执行查询改写
-        String processedQuery = query;
-        if (queryRewriterService.shouldRewrite(query)) {
-            log.info("[{}] [智能检索] 执行查询改写", traceId);
-            Instant rewriteStart = java.time.Instant.now();
-            QueryRewriterService.RewrittenQuery rewrittenQuery = queryRewriterService.rewriteQuery(query);
-            processedQuery = rewrittenQuery.getEnhancedQuery();
-            java.time.Duration rewriteDuration = java.time.Duration.between(rewriteStart, java.time.Instant.now());
-            log.info("[{}] [智能检索] 查询改写完成，耗时: {}ms, 原查询: '{}', 增强查询: '{}'", 
-                    traceId, rewriteDuration.toMillis(), query, processedQuery);
-        } else {
-            log.info("[{}] [智能检索] 无需查询改写，使用原始查询: '{}'", traceId, query);
-        }
+        log.info("[{}] [智能检索] 开始，查询: '{}', 知识库: {}, topK: {}",
+                traceId, query, knowledgeBaseId, topK);
 
-        // 2. 判断是否使用HyDE
-        log.info("[{}] [智能检索] 判断是否使用HyDE", traceId);
+        String processedQuery = rewriteQueryIfNeed(query, traceId);
+
         boolean useHyde = hydeService.shouldUseHyde(processedQuery);
         log.info("[{}] [智能检索] 是否使用HyDE: {}", traceId, useHyde);
 
         List<Document> result;
         if (useHyde) {
-            // 使用HyDE检索
-            log.info("[{}] [智能检索] 使用HyDE检索", traceId);
-            Instant hydeStart = java.time.Instant.now();
-            result = hydeService.retrieveWithHyde(processedQuery, knowledgeBaseId, topK);
-            java.time.Duration hydeDuration = java.time.Duration.between(hydeStart, java.time.Instant.now());
-            log.info("[{}] [智能检索] HyDE检索完成，耗时: {}ms, 返回文档数: {}", 
-                    traceId, hydeDuration.toMillis(), result.size());
+            result = executeHydeRetrieval(processedQuery, knowledgeBaseId, topK, traceId, start);
         } else {
-            // 使用普通检索
-            log.info("[{}] [智能检索] 使用普通高级检索", traceId);
-            result = retrieve(processedQuery, knowledgeBaseId, topK);
+            result = executeStandardRetrieval(processedQuery, knowledgeBaseId, topK, traceId, start);
         }
 
-        java.time.Duration totalDuration = java.time.Duration.between(start, java.time.Instant.now());
-        log.info("[{}] [智能检索] 完成，总耗时: {}ms, 最终返回文档数: {}", 
-                traceId, totalDuration.toMillis(), result.size());
+        log.info("[{}] [智能检索] 完成，总耗时: {}ms, 最终返回文档数: {}",
+                traceId, Duration.between(start, Instant.now()).toMillis(), result.size());
+
         return result;
     }
 
-    /**
-     * 执行智能检索并转换为 DocumentSourceDTO
-     */
-    public List<DocumentSourceDTO> smartRetrieveAndConvert(String query, String knowledgeBaseId, int topK) {
-        List<Document> documents = smartRetrieve(query, knowledgeBaseId, topK);
-        return convertToDocumentSources(documents);
+    private List<Document> executeHydeRetrieval(String processedQuery, String knowledgeBaseId,
+                                                int topK, String traceId, Instant start) {
+        log.info("[{}] [智能检索] 使用HyDE检索", traceId);
+        Instant hydeStart = Instant.now();
+
+        List<Document> result = hydeService.retrieveWithHyde(processedQuery, knowledgeBaseId, topK);
+
+        Instant hydeEnd = Instant.now();
+        log.info("[{}] [智能检索] HyDE检索完成，耗时: {}ms, 返回文档数: {}",
+                traceId, Duration.between(hydeStart, hydeEnd).toMillis(), result.size());
+
+        return result;
+    }
+
+    private List<Document> executeStandardRetrieval(String processedQuery, String knowledgeBaseId,
+                                                    int topK, String traceId, Instant start) {
+        log.info("[{}] [智能检索] 使用普通高级检索", traceId);
+        return retrieve(processedQuery, knowledgeBaseId, topK);
+    }
+
+
+
+    public double estimateRetrievalQuality(List<Document> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return 0.0;
+        }
+
+        double topScore = documents.stream()
+                .mapToDouble(doc -> getMetadataDouble(doc, "rule_score"))
+                .max()
+                .orElse(0.0);
+
+        return Math.min(topScore / retrievalConfig.getVector().getSimilarityThreshold() * 10, 1.0);
+    }
+
+    private String getDocumentId(Document doc) {
+        Object docId = doc.getMetadata().get("document_id");
+        return docId != null ? docId.toString() : "unknown";
+    }
+
+    private String getDocumentName(Document doc) {
+        Object docName = doc.getMetadata().get("document_name");
+        return docName != null ? docName.toString() : "unknown";
     }
 }

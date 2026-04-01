@@ -137,29 +137,5 @@ public class ConversationSummarizer {
         return text.substring(0, maxLength) + "...";
     }
 
-    /**
-     * 估算Token数量（简化版：中文字符按1个Token，英文按0.25个Token）
-     */
-    public int estimateTokens(String text) {
-        if (text == null || text.isEmpty()) return 0;
 
-        int chineseCount = (int) text.chars()
-                .filter(c -> c >= 0x4E00 && c <= 0x9FA5)
-                .count();
-        int otherCount = text.length() - chineseCount;
-
-        return chineseCount + (int) (otherCount * 0.25);
-    }
-
-    /**
-     * 检查是否需要压缩
-     */
-    public boolean needCompression(List<ChatMessage> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return false;
-        }
-        // 排除当前用户消息，只计算历史消息数量
-        int historyCount = messages.size() > 1 ? messages.size() - 1 : 0;
-        return historyCount > SUMMARIZE_THRESHOLD;
-    }
 }

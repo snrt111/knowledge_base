@@ -296,7 +296,14 @@ public class CrossEncoderReranker {
             score += ((Number) vectorScore).doubleValue() * 5.0;
         }
 
-        // 4. 长度惩罚（过长的文档适当降权）
+        // 4. 知识图谱分数（如果有）- 这是关键改进
+        Object kgScore = doc.getMetadata().get("kg_score");
+        if (kgScore instanceof Number) {
+            // 知识图谱检索结果通常具有较高的语义相关性，给予较高权重
+            score += ((Number) kgScore).doubleValue() * 8.0;
+        }
+
+        // 5. 长度惩罚（过长的文档适当降权）
         int length = text.length();
         if (length > 1000) {
             score *= 0.9;

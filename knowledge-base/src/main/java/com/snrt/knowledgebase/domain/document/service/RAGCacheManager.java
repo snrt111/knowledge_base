@@ -45,11 +45,8 @@ public class RAGCacheManager {
     // 缓存统计计数器
     private final AtomicLong redisHitCount = new AtomicLong(0);
     private final AtomicLong redisMissCount = new AtomicLong(0);
-    private final AtomicLong chatResponseHitCount = new AtomicLong(0);
-    private final AtomicLong chatResponseMissCount = new AtomicLong(0);
 
     private static final String REDIS_KEY_PREFIX = "rag:search:";
-    private static final String REDIS_RESPONSE_PREFIX = "rag:response:";
     private static final String REDIS_HYDE_PREFIX = "rag:hyde:";
     private static final String REDIS_REWRITE_PREFIX = "rag:rewrite:";
     private static final Duration REDIS_TTL = Duration.ofMinutes(10);
@@ -230,53 +227,6 @@ public class RAGCacheManager {
         return Optional.empty();
     }
 
-    // ==================== 聊天响应缓存 (L2 Redis) ====================
-
-    public void cacheChatResponse(String query, String knowledgeBaseId, String response) {
-        long startTime = System.currentTimeMillis();
-        String semanticKey = generateSemanticKey(query);
-        String cacheKey = REDIS_RESPONSE_PREFIX + knowledgeBaseId + ":" + semanticKey;
-
-        try {
-            redisTemplate.opsForValue().set(cacheKey, response, Duration.ofMinutes(5));
-            long duration = System.currentTimeMillis() - startTime;
-            log.info("[聊天响应缓存] 保存成功，键: {}, 查询长度: {}字符, 响应长度: {}字符, 耗时: {}ms", 
-                    cacheKey, query.length(), response.length(), duration);
-        } catch (Exception e) {
-            long duration = System.currentTimeMillis() - startTime;
-            log.warn("[聊天响应缓存] 保存失败，键: {}, 耗时: {}ms, 错误: {}", 
-                    cacheKey, duration, e.getMessage());
-        }
-    }
-
-    public Optional<String> getCachedChatResponse(String query, String knowledgeBaseId) {
-        long startTime = System.currentTimeMillis();
-        String semanticKey = generateSemanticKey(query);
-        String cacheKey = REDIS_RESPONSE_PREFIX + knowledgeBaseId + ":" + semanticKey;
-
-        try {
-            String response = redisTemplate.opsForValue().get(cacheKey);
-            long duration = System.currentTimeMillis() - startTime;
-            if (response != null) {
-                chatResponseHitCount.incrementAndGet();
-                log.info("[聊天响应缓存] 命中，键: {}, 查询长度: {}字符, 响应长度: {}字符, 耗时: {}ms", 
-                        cacheKey, query.length(), response.length(), duration);
-                return Optional.of(response);
-            } else {
-                chatResponseMissCount.incrementAndGet();
-                log.debug("[聊天响应缓存] 未命中，键: {}, 查询长度: {}字符, 耗时: {}ms", 
-                        cacheKey, query.length(), duration);
-            }
-        } catch (Exception e) {
-            chatResponseMissCount.incrementAndGet();
-            long duration = System.currentTimeMillis() - startTime;
-            log.warn("[聊天响应缓存] 读取失败，键: {}, 耗时: {}ms, 错误: {}", 
-                    cacheKey, duration, e.getMessage());
-        }
-
-        return Optional.empty();
-    }
-
     // ==================== HyDE假设答案缓存 (L2 Redis) ====================
 
     public void cacheHypotheticalAnswer(String query, String answer) {
@@ -437,23 +387,17 @@ public class RAGCacheManager {
     private CacheStatsDTO.RedisCacheStats buildRedisCacheStats() {
         try {
             long searchResultCount = countRedisKeys(REDIS_KEY_PREFIX + "*");
-            long chatResponseCount = countRedisKeys(REDIS_RESPONSE_PREFIX + "*");
             long hydeCount = countRedisKeys(REDIS_HYDE_PREFIX + "*");
             long rewriteCount = countRedisKeys(REDIS_REWRITE_PREFIX + "*");
-
-            long redisHits = redisHitCount.get();
-            long redisMisses = redisMissCount.get();
-            long chatHits = chatResponseHitCount.get();
-            long chatMisses = chatResponseMissCount.get();
 
             return CacheStatsDTO.RedisCacheStats.builder()
                     .connected(true)
                     .searchResultKeyCount(searchResultCount)
-                    .chatResponseKeyCount(chatResponseCount)
+                    .chatResponseKeyCount(0L)
                     .hydeKeyCount(hydeCount)
                     .rewriteKeyCount(rewriteCount)
-                    .totalKeyCount(searchResultCount + chatResponseCount + hydeCount + rewriteCount)
-                    .memoryUsage(null) // Redis内存使用需要额外配置
+                    .totalKeyCount(searchResultCount + hydeCount + rewriteCount)
+                    .memoryUsage(null)
                     .build();
         } catch (Exception e) {
             log.warn("获取Redis统计失败: {}", e.getMessage());
@@ -496,8 +440,8 @@ public class RAGCacheManager {
      * 计算综合命中率
      */
     private double calculateOverallHitRate(CacheStats embeddingStats, CacheStats localSearchStats) {
-        long totalHits = embeddingStats.hitCount() + localSearchStats.hitCount() + redisHitCount.get() + chatResponseHitCount.get();
-        long totalMisses = embeddingStats.missCount() + localSearchStats.missCount() + redisMissCount.get() + chatResponseMissCount.get();
+        long totalHits = embeddingStats.hitCount() + localSearchStats.hitCount() + redisHitCount.get();
+        long totalMisses = embeddingStats.missCount() + localSearchStats.missCount() + redisMissCount.get();
         long total = totalHits + totalMisses;
         return total > 0 ? (double) totalHits / total : 0.0;
     }
@@ -521,8 +465,6 @@ public class RAGCacheManager {
     public void resetStats() {
         redisHitCount.set(0);
         redisMissCount.set(0);
-        chatResponseHitCount.set(0);
-        chatResponseMissCount.set(0);
         log.info("RAG缓存统计计数器已重置");
     }
 
@@ -552,10 +494,9 @@ public class RAGCacheManager {
                 localSearchStats.getStatus());
 
         CacheStatsDTO.RedisCacheStats redisStats = stats.getRedisCacheStats();
-        log.info("Redis缓存 - 连接状态: {}, 检索结果键: {}, 聊天响应键: {}, HyDE键: {}, 查询改写键: {}",
+        log.info("Redis缓存 - 连接状态: {}, 检索结果键: {}, HyDE键: {}, 查询改写键: {}",
                 redisStats.getConnected() ? "正常" : "异常",
                 redisStats.getSearchResultKeyCount(),
-                redisStats.getChatResponseKeyCount(),
                 redisStats.getHydeKeyCount(),
                 redisStats.getRewriteKeyCount());
     }

@@ -3,7 +3,9 @@ package com.snrt.knowledgebase.domain.chat.service.impl;
 import com.snrt.knowledgebase.domain.chat.dto.ChatRequest;
 import com.snrt.knowledgebase.domain.chat.dto.ChatResponseDTO;
 import com.snrt.knowledgebase.domain.chat.dto.StreamChatResponse;
+import com.snrt.knowledgebase.domain.chat.service.ChatExecutor;
 import com.snrt.knowledgebase.domain.chat.service.ChatStrategy;
+import com.snrt.knowledgebase.domain.chat.service.StreamChatExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -14,11 +16,11 @@ import reactor.core.publisher.Flux;
 @RequiredArgsConstructor
 public class SyncChatStrategy implements ChatStrategy {
 
-    private final ChatStrategyHelper chatStrategyHelper;
+    private final ChatExecutor chatExecutor;
 
     @Override
     public ChatResponseDTO chat(ChatRequest request) {
-        return chatStrategyHelper.executeChat(request);
+        return chatExecutor.executeSyncChat(request);
     }
 
     @Override

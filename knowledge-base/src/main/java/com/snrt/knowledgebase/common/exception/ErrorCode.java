@@ -27,6 +27,11 @@ public enum ErrorCode {
     KNOWLEDGE_BASE_NOT_FOUND(4000, "知识库不存在: {0}"),
     KNOWLEDGE_BASE_ALREADY_EXISTS(4001, "知识库已存在: {0}"),
 
+    KNOWLEDGE_GRAPH_NOT_FOUND(4100, "知识图谱不存在: {0}"),
+    KNOWLEDGE_GRAPH_NODE_NOT_FOUND(4101, "知识图谱节点不存在: {0}"),
+    KNOWLEDGE_GRAPH_RELATION_NOT_FOUND(4102, "知识图谱关系不存在: {0}"),
+    KNOWLEDGE_GRAPH_NODE_ALREADY_EXISTS(4103, "知识图谱节点已存在: {0}"),
+
     CHAT_SESSION_NOT_FOUND(5000, "会话不存在: {0}"),
     MODEL_CALL_FAILED(5001, "模型调用失败: {0}"),
     INVALID_MESSAGE(5002, "消息内容无效: {0}"),

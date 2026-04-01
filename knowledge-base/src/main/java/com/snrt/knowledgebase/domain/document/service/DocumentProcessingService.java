@@ -1,6 +1,7 @@
 package com.snrt.knowledgebase.domain.document.service;
 
 import com.snrt.knowledgebase.common.constants.Constants;
+import com.snrt.knowledgebase.infrastructure.knowledgegraph.KnowledgeGraphSyncService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
@@ -29,10 +30,13 @@ public class DocumentProcessingService {
 
     private final VectorStore vectorStore;
     private final SemanticDocumentSplitter semanticSplitter;
+    private final KnowledgeGraphSyncService knowledgeGraphSyncService;
 
-    public DocumentProcessingService(VectorStore vectorStore, SemanticDocumentSplitter semanticSplitter) {
+    public DocumentProcessingService(VectorStore vectorStore, SemanticDocumentSplitter semanticSplitter,
+                                     KnowledgeGraphSyncService knowledgeGraphSyncService) {
         this.vectorStore = vectorStore;
         this.semanticSplitter = semanticSplitter;
+        this.knowledgeGraphSyncService = knowledgeGraphSyncService;
     }
 
     /**
@@ -64,13 +68,16 @@ public class DocumentProcessingService {
             // 批量写入向量存储
             vectorStore.add(documentsWithMetadata);
 
-            // 输出分块统计
             SemanticDocumentSplitter.ChunkAnalysis analysis = semanticSplitter.analyzeChunkQuality(documents);
             log.info("文档处理完成：{}，共 {} 个语义块，平均大小 {} 字符，总字符数 {}", 
                 filePath.getFileName(), 
                 analysis.getChunkCount(),
                 String.format("%.0f", analysis.getAvgSize()),
                 analysis.getTotalSize());
+
+            log.info("开始同步文档到知识图谱: documentId={}, knowledgeBaseId={}", documentId, knowledgeBaseId);
+            knowledgeGraphSyncService.syncDocumentToKnowledgeGraph(documentId, filePath.toString(), knowledgeBaseId);
+            log.info("同步文档到知识图谱完成: documentId={}, knowledgeBaseId={}", documentId, knowledgeBaseId);
 
         } catch (Exception e) {
             log.error("文档处理失败: {}", filePath, e);

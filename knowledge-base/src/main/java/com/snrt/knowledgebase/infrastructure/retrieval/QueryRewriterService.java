@@ -13,7 +13,6 @@ import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.regex.Pattern;
 
 /**
  * 查询改写/扩展服务
@@ -224,48 +223,6 @@ public class QueryRewriterService {
         }
 
         return false;
-    }
-
-    /**
-     * 拆分复杂查询
-     */
-    public List<String> splitComplexQuery(String query) {
-        List<String> subQueries = new ArrayList<>();
-        
-        // 基于标点符号拆分
-        String[] parts = query.split("[，,；;。.!？?]");
-        for (String part : parts) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty() && trimmed.length() > 3) {
-                subQueries.add(trimmed);
-            }
-        }
-        
-        // 如果没有拆分出子查询，返回原始查询
-        if (subQueries.isEmpty()) {
-            subQueries.add(query);
-        }
-        
-        return subQueries;
-    }
-
-    /**
-     * 多语言查询处理
-     */
-    public String translateQueryIfNeeded(String query) {
-        // 简单的语言检测（基于字符范围）
-        boolean containsChinese = Pattern.matches(".*[\\u4e00-\\u9fa5].*", query);
-        boolean containsEnglish = Pattern.matches(".*[a-zA-Z].*", query);
-        
-        // 如果是纯英文查询，考虑翻译成中文以匹配中文文档
-        if (containsEnglish && !containsChinese) {
-            log.info("[查询改写] 检测到英文查询，尝试翻译");
-            String prompt = "请将以下英文查询翻译成中文，保持专业术语的准确性：" + query;
-            ChatModel chatModel = chatModelFactory.getDefaultModel();
-            return chatModel.call(prompt);
-        }
-        
-        return query;
     }
 
     /**
