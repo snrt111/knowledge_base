@@ -32,6 +32,20 @@
         <div class="header-right">
           <el-tag type="success" v-if="isConnected">服务正常</el-tag>
           <el-tag type="danger" v-else>服务异常</el-tag>
+          
+          <el-dropdown @command="handleUserMenu">
+            <div class="user-info">
+              <el-avatar :size="32" :src="user?.avatar || ''">{{ user?.nickname?.charAt(0) || '用' }}</el-avatar>
+              <span class="user-name">{{ user?.nickname || user?.username }}</span>
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </el-header>
       <el-main class="main-content">
@@ -43,11 +57,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { chatApi } from '@/api/chat'
 
 const route = useRoute()
+const router = useRouter()
 const isConnected = ref(false)
+const userStr = localStorage.getItem('user')
+const user = ref(userStr && userStr !== 'undefined' ? JSON.parse(userStr) : null)
 
 const activeMenu = computed(() => route.path)
 
@@ -57,6 +75,19 @@ const checkHealth = async () => {
     isConnected.value = true
   } catch {
     isConnected.value = false
+  }
+}
+
+const handleUserMenu = (command: string) => {
+  if (command === 'logout') {
+    // 退出登录
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    ElMessage.success('退出成功')
+    router.push('/login')
+  } else if (command === 'profile') {
+    // 个人中心（后续可扩展）
+    ElMessage.info('个人中心功能开发中')
   }
 }
 
@@ -98,16 +129,37 @@ onMounted(() => {
 
 .header {
   background-color: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.user-info:hover {
+  background-color: #f5f7fa;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
 }
 
 .main-content {

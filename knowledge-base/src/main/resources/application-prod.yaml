@@ -49,13 +49,6 @@ chat:
     provider: ${CHAT_MODEL_PROVIDER:ollama}
     light-model-provider: ${CHAT_LIGHT_MODEL_PROVIDER:ollama}
 
-# MinIO 配置
-minio:
-  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-  access-key: ${MINIO_ACCESS_KEY:minioadmin}
-  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
-  bucket-name: ${MINIO_BUCKET_NAME:knowledge-base}
-
   # Redis配置
   data:
     redis:
@@ -64,6 +57,13 @@ minio:
       password: ${REDIS_PASSWORD:redis123}
       database: ${REDIS_DATABASE:0}
       timeout: 5000
+
+# MinIO 配置
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  bucket-name: ${MINIO_BUCKET_NAME:knowledge-base}
 
 # springdoc-openapi 生产环境配置
 springdoc:

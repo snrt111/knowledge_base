@@ -9,6 +9,22 @@ export const http = axios.create({
   timeout: 120_000
 })
 
+export default http
+
+// 请求拦截器：添加 token 到请求头
+http.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
 function isApiEnvelope(body: unknown): body is ApiResponse<unknown> {
   return typeof body === 'object' && body !== null && 'code' in body && typeof (body as ApiResponse<unknown>).code === 'number'
 }
@@ -27,6 +43,14 @@ http.interceptors.response.use(
       isApiEnvelope(data) ? data.message
       : typeof data?.message === 'string' ? data.message
       : error.message || '网络错误'
+    
+    // 401 未授权，清除 token 并跳转到登录页
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
+    }
+    
     return Promise.reject(new Error(msg))
   }
 )

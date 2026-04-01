@@ -128,7 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_message_create_time ON chat_message(create_time);
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS vector_store (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id BIGSERIAL PRIMARY KEY,
     content TEXT,
     metadata JSON,
     embedding vector(768)
