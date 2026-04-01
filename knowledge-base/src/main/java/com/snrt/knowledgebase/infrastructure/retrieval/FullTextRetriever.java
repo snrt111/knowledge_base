@@ -97,8 +97,9 @@ public class FullTextRetriever {
                 );
             }
 
-            // 4. 过滤匹配度低于50%的结果，并转换为 Document
-            double minScore = 0.5;
+            // 4. 过滤匹配度低于阈值的结果，并转换为 Document
+            // 注意：ts_rank_cd 返回的分数通常较低（0.1 左右即为有效匹配），阈值不宜设置过高
+            double minScore = 0.05;
             List<Document> documents = results.stream()
                     .filter(doc -> doc.getRank() != null && doc.getRank() >= minScore)
                     .map(this::convertToDocument)
@@ -109,7 +110,7 @@ public class FullTextRetriever {
                 documents = applyFuzzyMatch(documents, query, topK);
             }
 
-            log.info("[BM25全文检索] 查询: '{}', 匹配度>=50%的结果: {} 个", query, documents.size());
+            log.info("[BM25全文检索] 查询: '{}', 匹配度>={}%的结果: {} 个", query, (int)(minScore * 100), documents.size());
             return documents;
 
         } catch (Exception e) {
