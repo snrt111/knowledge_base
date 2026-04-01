@@ -11,6 +11,19 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 日志工具类
+ * 
+ * 提供统一的日志记录功能：
+ * - 生成和管理追踪ID（traceId）
+ * - 记录操作日志（成功/失败）
+ * - 记录业务事件
+ * - 记录API请求和响应
+ * - 性能监控
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 public class LogUtils {
 
@@ -22,18 +35,36 @@ public class LogUtils {
     private static final String STATUS = "status";
     private static final String ERROR_MSG = "errorMsg";
 
+    /**
+     * 生成追踪ID
+     * 
+     * @return 追踪ID
+     */
     public static String generateTraceId() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 
+    /**
+     * 设置追踪ID到MDC
+     * 
+     * @param traceId 追踪ID
+     */
     public static void setTraceId(String traceId) {
         MDC.put(TRACE_ID, traceId);
     }
 
+    /**
+     * 清除MDC中的追踪ID
+     */
     public static void clearTraceId() {
         MDC.remove(TRACE_ID);
     }
 
+    /**
+     * 获取追踪ID，如果不存在则生成新的
+     * 
+     * @return 追踪ID
+     */
     public static String getTraceId() {
         String traceId = MDC.get(TRACE_ID);
         if (traceId == null) {
@@ -43,6 +74,14 @@ public class LogUtils {
         return traceId;
     }
 
+    /**
+     * 记录操作日志
+     * 
+     * @param operation 操作名称
+     * @param status 操作状态（SUCCESS/FAILED）
+     * @param durationMs 执行耗时（毫秒）
+     * @param errorMsg 错误消息（失败时）
+     */
     public static void logOperation(String operation, String status, long durationMs, String errorMsg) {
         Map<String, Object> logMap = new HashMap<>();
         logMap.put(TRACE_ID, getTraceId());
@@ -65,14 +104,33 @@ public class LogUtils {
         }
     }
 
+    /**
+     * 记录成功操作日志
+     * 
+     * @param operation 操作名称
+     * @param durationMs 执行耗时（毫秒）
+     */
     public static void logOperationSuccess(String operation, long durationMs) {
         logOperation(operation, "SUCCESS", durationMs, null);
     }
 
+    /**
+     * 记录失败操作日志
+     * 
+     * @param operation 操作名称
+     * @param durationMs 执行耗时（毫秒）
+     * @param errorMsg 错误消息
+     */
     public static void logOperationFailed(String operation, long durationMs, String errorMsg) {
         logOperation(operation, "FAILED", durationMs, errorMsg);
     }
 
+    /**
+     * 记录业务事件
+     * 
+     * @param eventType 事件类型
+     * @param context 事件上下文
+     */
     public static void logBusinessEvent(String eventType, Map<String, Object> context) {
         Map<String, Object> logMap = new HashMap<>();
         logMap.put(TRACE_ID, getTraceId());
@@ -90,6 +148,13 @@ public class LogUtils {
         }
     }
 
+    /**
+     * 记录API请求日志
+     * 
+     * @param method HTTP方法
+     * @param path 请求路径
+     * @param params 请求参数
+     */
     public static void logApiRequest(String method, String path, Map<String, Object> params) {
         Map<String, Object> logMap = new HashMap<>();
         logMap.put(TRACE_ID, getTraceId());
@@ -108,6 +173,14 @@ public class LogUtils {
         }
     }
 
+    /**
+     * 记录API响应日志
+     * 
+     * @param method HTTP方法
+     * @param path 请求路径
+     * @param statusCode 状态码
+     * @param durationMs 执行耗时（毫秒）
+     */
     public static void logApiResponse(String method, String path, int statusCode, long durationMs) {
         Map<String, Object> logMap = new HashMap<>();
         logMap.put(TRACE_ID, getTraceId());
@@ -129,6 +202,13 @@ public class LogUtils {
         }
     }
 
+    /**
+     * 记录性能日志
+     * 
+     * @param operation 操作名称
+     * @param duration 执行耗时
+     * @param thresholdMs 性能阈值（毫秒）
+     */
     public static void logPerformance(String operation, Duration duration, long thresholdMs) {
         long durationMs = duration.toMillis();
         if (durationMs > thresholdMs) {

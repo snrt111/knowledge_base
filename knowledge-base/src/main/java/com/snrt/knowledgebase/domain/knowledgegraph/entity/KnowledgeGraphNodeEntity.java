@@ -7,6 +7,15 @@ import org.springframework.data.neo4j.core.schema.Property;
 
 import java.time.LocalDateTime;
 
+/**
+ * 知识图谱节点实体
+ * 
+ * 对应Neo4j图数据库中的节点
+ * 包含节点标签、名称、属性等信息
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Node("KGNode")
 public class KnowledgeGraphNodeEntity {

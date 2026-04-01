@@ -12,11 +12,25 @@ import java.lang.reflect.Method;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 
+/**
+ * 异步配置
+ * 
+ * 配置异步任务执行器和线程池
+ * 支持文档处理、聊天流等异步任务
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Configuration
 @EnableAsync
 public class AsyncConfig implements AsyncConfigurer {
 
+    /**
+     * 创建文档处理器线程池
+     * 
+     * @return 文档处理线程池
+     */
     @Bean("documentProcessorExecutor")
     public Executor documentProcessorExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -32,6 +46,11 @@ public class AsyncConfig implements AsyncConfigurer {
         return executor;
     }
 
+    /**
+     * 创建聊天流线程池
+     * 
+     * @return 聊天流线程池
+     */
     @Bean("chatStreamExecutor")
     public Executor chatStreamExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -47,6 +66,11 @@ public class AsyncConfig implements AsyncConfigurer {
         return executor;
     }
 
+    /**
+     * 获取默认异步执行器
+     * 
+     * @return 默认异步线程池
+     */
     @Override
     public Executor getAsyncExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -61,6 +85,11 @@ public class AsyncConfig implements AsyncConfigurer {
         return executor;
     }
 
+    /**
+     * 获取异步异常处理器
+     * 
+     * @return 异步异常处理器
+     */
     @Override
     public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
         return new AsyncUncaughtExceptionHandler() {

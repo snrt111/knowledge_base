@@ -9,11 +9,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 文档来源转换器
+ * 
+ * 将检索到的Document列表转换为DocumentSourceDTO列表：
+ * 1. 按文档ID分组
+ * 2. 计算文档得分（RRF + Rule融合）
+ * 3. 提取文档片段
+ * 4. 按得分排序
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Component
 public class DocumentSourceConverter {
 
     private static final double MIN_SCORE_THRESHOLD = 0.5;
 
+    /**
+     * 转换文档列表
+     * 
+     * @param documents 文档列表
+     * @return 文档来源DTO列表
+     */
     public List<DocumentSourceDTO> convert(List<Document> documents) {
         if (documents == null || documents.isEmpty()) {
             return List.of();
@@ -29,6 +47,13 @@ public class DocumentSourceConverter {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 创建文档来源DTO
+     * 
+     * @param docId 文档ID
+     * @param chunks 文档分块列表
+     * @return 文档来源DTO
+     */
     private DocumentSourceDTO createDocumentSource(String docId, List<Document> chunks) {
         Document firstChunk = chunks.get(0);
 
@@ -47,6 +72,12 @@ public class DocumentSourceConverter {
                 .build();
     }
 
+    /**
+     * 计算最大得分
+     * 
+     * @param chunks 文档分块列表
+     * @return 最大得分
+     */
     private double calculateMaxScore(List<Document> chunks) {
         return chunks.stream()
                 .mapToDouble(this::calculateDocumentScore)
@@ -54,6 +85,12 @@ public class DocumentSourceConverter {
                 .orElse(0.0);
     }
 
+    /**
+     * 计算文档得分（RRF + Rule融合）
+     * 
+     * @param doc 文档
+     * @return 得分
+     */
     private double calculateDocumentScore(Document doc) {
         Double rrf = (Double) doc.getMetadata().get("rrf_score");
         Double rule = (Double) doc.getMetadata().get("rule_score");
@@ -63,6 +100,12 @@ public class DocumentSourceConverter {
         return score;
     }
 
+    /**
+     * 提取文档片段
+     * 
+     * @param chunks 文档分块列表
+     * @return 片段列表（最多3个）
+     */
     private List<String> extractSnippets(List<Document> chunks) {
         return chunks.stream()
                 .map(Document::getText)
@@ -71,16 +114,37 @@ public class DocumentSourceConverter {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 获取文档ID
+     * 
+     * @param doc 文档
+     * @return 文档ID
+     */
     private String getDocumentId(Document doc) {
         Object docId = doc.getMetadata().get(Constants.VectorStore.METADATA_DOCUMENT_ID);
         return docId != null ? docId.toString() : "unknown";
     }
 
+    /**
+     * 获取元数据字符串
+     * 
+     * @param doc 文档
+     * @param key 元数据键
+     * @param defaultValue 默认值
+     * @return 元数据值
+     */
     private String getMetadataString(Document doc, String key, String defaultValue) {
         Object value = doc.getMetadata().get(key);
         return value != null ? value.toString() : defaultValue;
     }
 
+    /**
+     * 按得分比较
+     * 
+     * @param s1 文档来源DTO1
+     * @param s2 文档来源DTO2
+     * @return 比较结果
+     */
     private int compareByScore(DocumentSourceDTO s1, DocumentSourceDTO s2) {
         Double score1 = s1.getScore();
         Double score2 = s2.getScore();

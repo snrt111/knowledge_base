@@ -4,6 +4,14 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+/**
+ * 知识图谱关系创建请求DTO
+ * 
+ * 包含关系类型、起始节点ID、目标节点ID和属性信息
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 public class KnowledgeGraphRelationCreateRequest {
 

@@ -7,9 +7,10 @@ import java.time.LocalDateTime;
 
 /**
  * RAG缓存统计DTO
- *
+ * 
  * 用于暴露缓存命中率、大小等监控指标
- *
+ * 支持Embedding缓存、本地检索缓存和Redis缓存的统计
+ * 
  * @author SNRT
  * @since 1.0
  */

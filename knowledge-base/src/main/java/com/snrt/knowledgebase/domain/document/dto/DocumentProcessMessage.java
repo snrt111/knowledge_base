@@ -8,6 +8,15 @@ import lombok.NoArgsConstructor;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
+/**
+ * 文档处理消息DTO
+ * 
+ * 用于RabbitMQ消息队列传递文档处理任务
+ * 包含文档信息、文件路径、重试次数等
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Builder
 @NoArgsConstructor

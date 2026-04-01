@@ -4,6 +4,15 @@ import lombok.Data;
 
 import java.util.List;
 
+/**
+ * 分页结果封装
+ * 
+ * 用于封装分页查询的结果
+ * 包含数据列表、总记录数、当前页和每页大小
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 public class PageResult<T> {
 
@@ -12,6 +21,14 @@ public class PageResult<T> {
     private Integer page;
     private Integer size;
 
+    /**
+     * 构造分页结果
+     * 
+     * @param list 数据列表
+     * @param total 总记录数
+     * @param page 当前页码
+     * @param size 每页大小
+     */
     public PageResult(List<T> list, Long total, Integer page, Integer size) {
         this.list = list;
         this.total = total;
@@ -19,6 +36,16 @@ public class PageResult<T> {
         this.size = size;
     }
 
+    /**
+     * 创建分页结果实例
+     * 
+     * @param list 数据列表
+     * @param total 总记录数
+     * @param page 当前页码
+     * @param size 每页大小
+     * @param <T> 数据类型
+     * @return PageResult实例
+     */
     public static <T> PageResult<T> of(List<T> list, Long total, Integer page, Integer size) {
         return new PageResult<>(list, total, page, size);
     }

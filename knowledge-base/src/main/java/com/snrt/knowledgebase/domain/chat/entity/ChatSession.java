@@ -10,6 +10,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 聊天会话实体
+ * 
+ * 对应数据库中的聊天会话表
+ * 包含会话的基本信息、关联的知识库和消息列表
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Entity
 @Table(name = "chat_session")

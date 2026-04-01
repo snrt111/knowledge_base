@@ -18,6 +18,16 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 缓存配置
+ * 
+ * 配置两级缓存架构：
+ * - L1本地缓存（Caffeine）：Embedding结果、检索结果、聊天响应
+ * - L2分布式缓存（Redis）：检索结果、聊天响应
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Configuration
 @EnableCaching
@@ -27,6 +37,11 @@ public class CacheConfig {
     public static final String CACHE_SEARCH_RESULT = "searchResultCache";
     public static final String CACHE_CHAT_RESPONSE = "chatResponseCache";
 
+    /**
+     * 创建Caffeine本地缓存管理器
+     * 
+     * @return CaffeineCacheManager实例
+     */
     @Bean
     @Primary
     public CacheManager caffeineCacheManager() {
@@ -44,6 +59,12 @@ public class CacheConfig {
         return cacheManager;
     }
 
+    /**
+     * 创建Redis分布式缓存管理器
+     * 
+     * @param connectionFactory Redis连接工厂
+     * @return RedisCacheManager实例
+     */
     @Bean
     public CacheManager redisCacheManager(RedisConnectionFactory connectionFactory) {
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()

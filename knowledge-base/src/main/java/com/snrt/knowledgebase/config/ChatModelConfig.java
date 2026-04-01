@@ -9,6 +9,15 @@ import org.springframework.context.annotation.Primary;
 
 import java.util.Map;
 
+/**
+ * 聊天模型配置
+ * 
+ * 配置和管理聊天模型（ChatModel）的Bean
+ * 支持多种模型提供商（智谱AI、Ollama等）
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Configuration
 public class ChatModelConfig {
@@ -16,6 +25,13 @@ public class ChatModelConfig {
     public static final String ZHIPU_AI = "zhipuAiChatModel";
     public static final String OLLAMA = "ollamaChatModel";
 
+    /**
+     * 创建默认聊天模型Bean
+     * 
+     * @param chatModels 所有聊天模型Map
+     * @param properties 聊天模型属性
+     * @return 默认聊天模型
+     */
     @Bean
     @Primary
     public ChatModel chatModel(

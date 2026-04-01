@@ -11,12 +11,25 @@ import java.io.InputStream;
 import java.util.List;
 
 /**
- * 将文档流转为纯文本（Tika），供文本类预览与解析复用。
+ * 文档文本提取器
+ * 
+ * 使用Apache Tika从各种文档格式中提取纯文本内容，
+ * 支持PDF、Word、Excel、PPT等多种文件格式。
+ * 
+ * @author SNRT
+ * @since 1.0
  */
 @Slf4j
 @Component
 public class DocumentTextExtractor {
 
+    /**
+     * 从输入流中提取纯文本内容
+     * 
+     * @param inputStream 文档输入流
+     * @param fileType 文件类型（扩展名）
+     * @return 提取的纯文本内容
+     */
     public String extractPlainText(InputStream inputStream, String fileType) {
         try {
             DocumentReader reader = new TikaDocumentReader(new InputStreamResource(inputStream));

@@ -10,7 +10,11 @@ import java.util.List;
 
 /**
  * 聊天响应DTO
- * 包含AI回答内容和文档来源
+ * 
+ * 包含AI回答内容和引用的文档来源列表
+ * 
+ * @author SNRT
+ * @since 1.0
  */
 @Data
 @Builder

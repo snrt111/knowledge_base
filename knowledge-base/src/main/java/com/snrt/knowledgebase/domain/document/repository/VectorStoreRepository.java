@@ -9,10 +9,10 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 /**
- * 向量存储 Repository
- *
- * 用于全文检索和向量数据查询
- *
+ * 向量存储Repository
+ * 
+ * 提供向量数据的全文检索和向量查询功能
+ * 
  * @author SNRT
  * @since 1.0
  */
@@ -20,9 +20,9 @@ import java.util.List;
 public interface VectorStoreRepository extends JpaRepository<VectorDocument, Long> {
 
     /**
-     * 使用 PostgreSQL 全文检索进行关键词搜索
-     *
-     * @param query 查询关键词（tsquery 格式）
+     * 使用PostgreSQL全文检索进行关键词搜索
+     * 
+     * @param query 查询关键词（tsquery格式）
      * @param limit 返回结果数量
      * @return 匹配的文档列表
      */
@@ -41,9 +41,9 @@ public interface VectorStoreRepository extends JpaRepository<VectorDocument, Lon
     List<VectorDocument> searchByFullText(@Param("query") String query, @Param("limit") int limit);
 
     /**
-     * 使用 PostgreSQL 全文检索进行关键词搜索（带知识库过滤）
-     *
-     * @param query 查询关键词（tsquery 格式）
+     * 使用PostgreSQL全文检索进行关键词搜索（带知识库过滤）
+     * 
+     * @param query 查询关键词（tsquery格式）
      * @param knowledgeBaseId 知识库ID
      * @param limit 返回结果数量
      * @return 匹配的文档列表
@@ -67,8 +67,8 @@ public interface VectorStoreRepository extends JpaRepository<VectorDocument, Lon
             @Param("limit") int limit);
 
     /**
-     * 使用 BM25 算法进行全文检索（带文档长度归一化）
-     *
+     * 使用BM25算法进行全文检索（带文档长度归一化）
+     * 
      * @param query 查询关键词（普通文本，会自动转换为tsquery）
      * @param limit 返回结果数量
      * @param normalizationMode 归一化模式 (0-32, 常用: 1=长度归一化, 2=唯一词数归一化, 8=词频归一化)
@@ -92,8 +92,8 @@ public interface VectorStoreRepository extends JpaRepository<VectorDocument, Lon
             @Param("normalizationMode") int normalizationMode);
 
     /**
-     * 使用 BM25 算法进行全文检索（带知识库过滤）
-     *
+     * 使用BM25算法进行全文检索（带知识库过滤）
+     * 
      * @param query 查询关键词（普通文本，会自动转换为tsquery）
      * @param knowledgeBaseId 知识库ID
      * @param limit 返回结果数量
@@ -121,15 +121,15 @@ public interface VectorStoreRepository extends JpaRepository<VectorDocument, Lon
 
     /**
      * 检查全文检索是否可用
-     *
-     * @return 如果可用返回 true
+     * 
+     * @return 如果可用返回true
      */
     @Query(value = "SELECT to_tsvector('simple', 'test') @@ to_tsquery('simple', 'test')", nativeQuery = true)
     Boolean isFullTextSearchAvailable();
 
     /**
      * 根据文档ID删除向量数据
-     *
+     * 
      * @param documentId 文档ID
      */
     @Query(value = "DELETE FROM vector_store WHERE metadata->>'document_id' = :documentId", nativeQuery = true)
@@ -137,7 +137,7 @@ public interface VectorStoreRepository extends JpaRepository<VectorDocument, Lon
 
     /**
      * 根据知识库ID统计文档数量
-     *
+     * 
      * @param knowledgeBaseId 知识库ID
      * @return 文档数量
      */

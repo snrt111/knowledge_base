@@ -42,7 +42,18 @@ public class DocumentProcessingService {
     /**
      * 处理并索引文档
      * 
-     * 使用智能语义分块策略，保持语义完整性
+     * 完整的处理流程：
+     * 1. 读取文档内容（支持文本文件和二进制文件）
+     * 2. 添加元数据（文档ID、知识库ID等）
+     * 3. 使用智能语义分块策略进行分块
+     * 4. 批量写入向量存储
+     * 5. 同步文档到知识图谱
+     * 
+     * @param filePath 文档文件路径
+     * @param documentId 文档ID
+     * @param documentName 文档名称
+     * @param knowledgeBaseId 知识库ID
+     * @param knowledgeBaseName 知识库名称
      */
     public void processAndIndexDocument(Path filePath, String documentId, String documentName,
                                         String knowledgeBaseId, String knowledgeBaseName) {
@@ -85,6 +96,21 @@ public class DocumentProcessingService {
         }
     }
 
+    /**
+     * 从向量存储中删除文档
+     * 
+     * @param documentId 文档ID
+     */
+    public void deleteDocumentFromVectorStore(String documentId) {
+        try {
+            String filterExpression = String.format("%s in ['%s']", Constants.VectorStore.METADATA_DOCUMENT_ID, documentId);
+            vectorStore.delete(filterExpression);
+            log.info("从向量存储删除文档成功: documentId={}", documentId);
+        } catch (Exception e) {
+            log.error("从向量存储删除文档失败: documentId={}", documentId, e);
+        }
+    }
+
     private List<Document> readDocument(Path filePath) throws IOException {
         String fileName = filePath.getFileName().toString().toLowerCase();
         
@@ -97,6 +123,10 @@ public class DocumentProcessingService {
     
     /**
      * 读取文本文件并使用智能语义分块
+     * 
+     * @param filePath 文本文件路径
+     * @return 分块后的文档列表
+     * @throws IOException 读取失败时抛出
      */
     private List<Document> readTextDocument(Path filePath) throws IOException {
         String content = Files.readString(filePath);
@@ -116,6 +146,11 @@ public class DocumentProcessingService {
     
     /**
      * 使用Tika读取文件并使用智能语义分块
+     * 
+     * 支持多种二进制文件格式（PDF、Word、Excel等）
+     * 
+     * @param filePath 文件路径
+     * @return 分块后的文档列表
      */
     private List<Document> readWithTika(Path filePath) {
         log.info("开始使用 Tika 读取文件: {}", filePath);
@@ -150,15 +185,5 @@ public class DocumentProcessingService {
         }
         
         return splitDocuments;
-    }
-
-    public void deleteDocumentFromVectorStore(String documentId) {
-        try {
-            String filterExpression = String.format("%s in ['%s']", Constants.VectorStore.METADATA_DOCUMENT_ID, documentId);
-            vectorStore.delete(filterExpression);
-            log.info("从向量存储删除文档成功: documentId={}", documentId);
-        } catch (Exception e) {
-            log.error("从向量存储删除文档失败: documentId={}", documentId, e);
-        }
     }
 }

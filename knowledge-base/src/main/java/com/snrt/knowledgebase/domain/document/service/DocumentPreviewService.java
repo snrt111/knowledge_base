@@ -17,7 +17,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * 文档预览编排：按 {@link PreviewType} 决定返回纯文本、下载 URL 或错误说明。
+ * 文档预览服务
+ * 
+ * 根据文档类型和预览策略，提供不同的预览方式：
+ * - 直接文本预览：适用于支持的文本类文件
+ * - 下载预览：适用于需要客户端渲染的文件
+ * - 错误提示：适用于不支持的文件类型
+ * 
+ * @author SNRT
+ * @since 1.0
  */
 @Slf4j
 @Service
@@ -30,6 +38,17 @@ public class DocumentPreviewService {
     private final MinioService minioService;
     private final DocumentTextExtractor documentTextExtractor;
 
+    /**
+     * 文档预览入口方法
+     * 
+     * 根据文档类型和预览策略，返回不同的预览结果：
+     * - 文本预览：直接返回文档内容
+     * - 下载预览：返回下载URL
+     * - 错误提示：返回错误信息和下载URL
+     * 
+     * @param id 文档ID
+     * @return 文档预览DTO
+     */
     @Transactional(readOnly = true)
     public DocumentPreviewDTO previewDocument(String id) {
         Document doc = documentRepository.findByIdAndIsDeletedFalse(id)
@@ -77,10 +96,24 @@ public class DocumentPreviewService {
         return preview;
     }
 
+    /**
+     * 构建下载路径
+     * 
+     * @param documentId 文档ID
+     * @return 下载URL路径
+     */
     private static String buildDownloadPath(String documentId) {
         return API_DOWNLOAD_PREFIX + documentId + "/download";
     }
 
+    /**
+     * 打开文档流
+     * 
+     * 优先从MinIO下载，如果失败则尝试从本地文件系统读取
+     * 
+     * @param doc 文档实体
+     * @return 文档输入流
+     */
     private InputStream openDocumentStream(Document doc) {
         if (doc.getObjectName() != null && minioService.fileExists(doc.getObjectName())) {
             try {

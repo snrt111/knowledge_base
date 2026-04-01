@@ -4,6 +4,14 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 聊天会话DTO
+ * 
+ * 包含会话的基本信息：标题、知识库、消息数量等
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 public class ChatSessionDTO {
 

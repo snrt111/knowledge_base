@@ -9,9 +9,10 @@ import java.util.Map;
 
 /**
  * 向量文档实体
- *
- * 对应 pgvector 的 vector_store 表
- *
+ * 
+ * 对应pgvector的vector_store表
+ * 用于存储文档的向量嵌入和元数据信息
+ * 
  * @author SNRT
  * @since 1.0
  */
@@ -39,6 +40,8 @@ public class VectorDocument {
 
     /**
      * 获取文档ID
+     * 
+     * @return 文档ID
      */
     public String getDocumentId() {
         if (metadata != null && metadata.containsKey("document_id")) {
@@ -49,6 +52,8 @@ public class VectorDocument {
 
     /**
      * 获取知识库ID
+     * 
+     * @return 知识库ID
      */
     public String getKnowledgeBaseId() {
         if (metadata != null && metadata.containsKey("knowledge_base_id")) {
@@ -59,6 +64,8 @@ public class VectorDocument {
 
     /**
      * 获取文档名称
+     * 
+     * @return 文档名称
      */
     public String getDocumentName() {
         if (metadata != null && metadata.containsKey("document_name")) {
@@ -69,6 +76,8 @@ public class VectorDocument {
 
     /**
      * 获取知识库名称
+     * 
+     * @return 知识库名称
      */
     public String getKnowledgeBaseName() {
         if (metadata != null && metadata.containsKey("knowledge_base_name")) {

@@ -13,6 +13,15 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
 
+/**
+ * Redis配置
+ * 
+ * 配置Redis连接工厂和StringRedisTemplate
+ * 支持密码认证、超时设置等
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Configuration
 public class RedisConfig {
@@ -32,6 +41,11 @@ public class RedisConfig {
     @Value("${spring.data.redis.timeout:5000}")
     private long timeout;
 
+    /**
+     * 创建Redis连接工厂Bean
+     * 
+     * @return RedisConnectionFactory实例
+     */
     @Bean
     public RedisConnectionFactory redisConnectionFactory() {
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration();
@@ -52,6 +66,12 @@ public class RedisConfig {
         return factory;
     }
 
+    /**
+     * 创建StringRedisTemplate Bean
+     * 
+     * @param connectionFactory Redis连接工厂
+     * @return StringRedisTemplate实例
+     */
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory connectionFactory) {
         StringRedisTemplate template = new StringRedisTemplate();

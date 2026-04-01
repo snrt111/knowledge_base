@@ -6,6 +6,15 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
+/**
+ * 聊天消息实体
+ * 
+ * 对应数据库中的聊天消息表
+ * 包含消息内容、角色（用户/助手/系统）和关联的会话
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Entity
 @Table(name = "chat_message")

@@ -6,6 +6,15 @@ import org.springframework.data.neo4j.core.schema.Property;
 
 import java.time.LocalDateTime;
 
+/**
+ * 知识图谱关系实体
+ * 
+ * 对应Neo4j图数据库中的关系
+ * 包含关系类型、属性、关联的节点等信息
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 public class KnowledgeGraphRelationEntity {
 

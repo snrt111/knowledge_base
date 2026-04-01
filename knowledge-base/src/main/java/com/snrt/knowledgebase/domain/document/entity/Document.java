@@ -8,6 +8,15 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
+/**
+ * 文档实体
+ * 
+ * 对应数据库中的文档表
+ * 包含文档的基本信息、状态和关联的知识库
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Entity
 @Table(name = "document")

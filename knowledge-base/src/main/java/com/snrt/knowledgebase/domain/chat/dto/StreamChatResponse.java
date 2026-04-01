@@ -10,7 +10,12 @@ import java.util.List;
 
 /**
  * 流式聊天响应DTO
+ * 
  * 用于SSE流式返回AI回答内容和文档来源
+ * 支持三种响应类型：content（内容块）、sources（文档来源）、complete（完成标记）
+ * 
+ * @author SNRT
+ * @since 1.0
  */
 @Data
 @Builder

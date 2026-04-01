@@ -13,19 +13,43 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.time.Duration;
 import java.time.Instant;
 
+/**
+ * 日志切面
+ * 
+ * 统一记录Controller和Service层方法的执行日志：
+ * - 记录方法执行耗时
+ * - 性能告警（超过3秒）
+ * - 异常日志记录
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Aspect
 @Component
 public class LoggingAspect {
 
+    /**
+     * Controller层切点
+     */
     @Pointcut("within(@org.springframework.web.bind.annotation.RestController *)")
     public void controllerPointcut() {
     }
 
+    /**
+     * Service层切点
+     */
     @Pointcut("within(@org.springframework.stereotype.Service *)")
     public void servicePointcut() {
     }
 
+    /**
+     * 环绕通知：记录方法执行日志
+     * 
+     * @param joinPoint 切入点
+     * @return 方法执行结果
+     * @throws Throwable 异常
+     */
     @Around("controllerPointcut() || servicePointcut()")
     public Object logAround(ProceedingJoinPoint joinPoint) throws Throwable {
         Instant start = Instant.now();
@@ -56,6 +80,11 @@ public class LoggingAspect {
         }
     }
 
+    /**
+     * 获取当前请求的HttpServletRequest
+     * 
+     * @return HttpServletRequest实例
+     */
     private HttpServletRequest getCurrentRequest() {
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         return attributes != null ? attributes.getRequest() : null;

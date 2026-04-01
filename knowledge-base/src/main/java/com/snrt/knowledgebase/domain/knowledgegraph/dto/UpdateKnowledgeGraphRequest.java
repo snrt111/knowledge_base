@@ -4,6 +4,14 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+/**
+ * 更新知识图谱请求DTO
+ * 
+ * 包含知识图谱的名称、描述信息
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 public class UpdateKnowledgeGraphRequest {
 

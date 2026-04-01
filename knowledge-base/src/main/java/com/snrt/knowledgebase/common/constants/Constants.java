@@ -2,11 +2,29 @@ package com.snrt.knowledgebase.common.constants;
 
 import java.util.Set;
 
+/**
+ * 系统常量定义
+ * 
+ * 统一管理系统的常量配置：
+ * - 文件相关配置
+ * - 分页相关配置
+ * - 缓存相关配置
+ * - 聊天相关配置
+ * - 文档状态配置
+ * - 向量存储配置
+ * - 异步任务配置
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 public final class Constants {
 
     private Constants() {
     }
 
+    /**
+     * 文件相关常量
+     */
     public static final class File {
         public static final long MAX_SIZE = 1024L * 1024 * 1024; // 1GB
         // 只支持 PDF、Word、Excel、PPT、Markdown、TXT
@@ -23,12 +41,18 @@ public final class Constants {
         public static final int DEFAULT_EXPIRY_HOURS = 24;
     }
 
+    /**
+     * 分页相关常量
+     */
     public static final class Pagination {
         public static final int DEFAULT_PAGE = 1;
         public static final int DEFAULT_SIZE = 10;
         public static final int MAX_SIZE = 100;
     }
 
+    /**
+     * 缓存相关常量
+     */
     public static final class Cache {
         public static final String KNOWLEDGE_BASE = "knowledgeBase";
         public static final String DOCUMENT = "document";
@@ -36,6 +60,9 @@ public final class Constants {
         public static final long DEFAULT_TTL_MINUTES = 10;
     }
 
+    /**
+     * 聊天相关常量
+     */
     public static final class Chat {
         public static final int MAX_CONTEXT_LENGTH = 10;
         public static final int MAX_MESSAGE_LENGTH = 5000;
@@ -54,12 +81,18 @@ public final class Constants {
         public static final int KEEP_RECENT_MESSAGES = 2;
     }
 
+    /**
+     * 文档状态常量
+     */
     public static final class DocumentStatus {
         public static final String PROCESSING = "processing";
         public static final String COMPLETED = "completed";
         public static final String FAILED = "failed";
     }
 
+    /**
+     * 向量存储相关常量
+     */
     public static final class VectorStore {
         // 传统分块配置（已弃用，保留兼容）
         public static final int CHUNK_SIZE = 1000;
@@ -87,6 +120,9 @@ public final class Constants {
         public static final String METADATA_HIERARCHY_LEVEL = "hierarchyLevel";
     }
 
+    /**
+     * 异步任务相关常量
+     */
     public static final class Async {
         public static final String DOCUMENT_PROCESSOR_EXECUTOR = "documentProcessorExecutor";
         public static final String CHAT_STREAM_EXECUTOR = "chatStreamExecutor";

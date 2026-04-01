@@ -9,7 +9,12 @@ import java.util.List;
 
 /**
  * 文档来源信息DTO
+ * 
  * 用于记录AI回答引用的知识库文档来源
+ * 包含文档ID、名称、知识库名称、相关性分数和引用片段
+ * 
+ * @author SNRT
+ * @since 1.0
  */
 @Data
 @Builder

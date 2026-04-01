@@ -10,6 +10,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 知识库实体
+ * 
+ * 对应数据库中的知识库表
+ * 包含知识库的基本信息和关联的文档列表
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Entity
 @Table(name = "knowledge_base")

@@ -4,6 +4,14 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+/**
+ * 创建知识库请求DTO
+ * 
+ * 包含知识库名称和描述
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 public class CreateKnowledgeBaseRequest {
 

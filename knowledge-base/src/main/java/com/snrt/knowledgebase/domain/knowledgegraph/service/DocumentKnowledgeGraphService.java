@@ -11,6 +11,17 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * 文档知识图谱服务
+ * 
+ * 提供文档与知识图谱的关联功能：
+ * - 文档与实体的关联
+ * - 实体之间的关系构建
+ * - 基于实体的文档检索
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,6 +39,20 @@ public class DocumentKnowledgeGraphService {
     public static final String RELATION_TYPE_CONTAINS = "CONTAINS";
     public static final String RELATION_TYPE_SIMILAR = "SIMILAR";
 
+    /**
+     * 将文档与实体关联
+     * 
+     * 关联流程：
+     * 1. 查找或创建实体节点
+     * 2. 查找文档节点
+     * 3. 检查是否已关联
+     * 4. 创建"EXTRACTS"关系
+     * 
+     * @param documentUuid 文档UUID
+     * @param entityName 实体名称
+     * @param entityLabel 实体标签
+     * @param knowledgeGraphUuid 知识图谱UUID
+     */
     public void linkDocumentToEntity(String documentUuid, String entityName, String entityLabel, String knowledgeGraphUuid) {
         log.debug("[文档-实体关联] 开始关联: documentUuid={}, entityName={}, entityLabel={}, knowledgeGraphUuid={}", 
                 documentUuid, entityName, entityLabel, knowledgeGraphUuid);
@@ -76,6 +101,18 @@ public class DocumentKnowledgeGraphService {
         }
     }
 
+    /**
+     * 根据实体名称获取相关文档列表
+     * 
+     * 查询流程：
+     * 1. 查找实体节点
+     * 2. 查找与该实体相关的所有关系
+     * 3. 提取所有文档UUID并去重
+     * 
+     * @param entityName 实体名称
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @return 相关文档UUID列表
+     */
     public List<String> getDocumentsByEntity(String entityName, String knowledgeGraphUuid) {
         var entityNode = nodeRepository.findByNameAndKnowledgeGraphUuidAndIsDeletedFalse(entityName, knowledgeGraphUuid);
         if (entityNode.isEmpty()) {
@@ -91,6 +128,14 @@ public class DocumentKnowledgeGraphService {
                 .collect(java.util.stream.Collectors.toList());
     }
 
+    /**
+     * 创建实体之间的关系
+     * 
+     * @param fromEntityName 起始实体名称
+     * @param toEntityName 目标实体名称
+     * @param relationType 关系类型
+     * @param knowledgeGraphUuid 知识图谱UUID
+     */
     public void createEntityRelationship(String fromEntityName, String toEntityName, String relationType, 
                                          String knowledgeGraphUuid) {
         log.debug("创建实体关系: from={}, to={}, type={}, knowledgeGraphUuid={}", 
@@ -120,7 +165,31 @@ public class DocumentKnowledgeGraphService {
             relation.setKnowledgeGraphUuid(knowledgeGraphUuid);
             relation.setIsDeleted(false);
             relationRepository.save(relation);
-            log.info("创建实体关系: {} -[{}]-> {}", fromEntityName, relationType, toEntityName);
+            log.info("实体关系创建成功: from={} -> to={}, type={}", fromEntityName, toEntityName, relationType);
+        } else {
+            log.debug("实体关系已存在，跳过: from={} -> to={}, type={}", fromEntityName, toEntityName, relationType);
         }
+    }
+
+    /**
+     * 根据文档UUID获取关联的实体列表
+     * 
+     * @param documentUuid 文档UUID
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @return 实体名称列表
+     */
+    public List<String> getEntitiesByDocument(String documentUuid, String knowledgeGraphUuid) {
+        var documentNode = nodeRepository.findByUuidAndIsDeletedFalse(documentUuid);
+        if (documentNode.isEmpty()) {
+            return List.of();
+        }
+
+        var relations = relationRepository.findByFromNodeUuidAndKnowledgeGraphUuidAndIsDeletedFalse(
+                documentNode.get().getUuid(), knowledgeGraphUuid);
+
+        return relations.stream()
+                .map(KnowledgeGraphRelationEntity::getToNodeUuid)
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
     }
 }

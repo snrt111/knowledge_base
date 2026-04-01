@@ -14,9 +14,14 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Jackson 序列化配置
+ * Jackson序列化配置
  * 
- * 配置 Java 8 日期时间类型的序列化支持
+ * 配置Java 8日期时间类型的序列化支持：
+ * - LocalDateTime的序列化和反序列化
+ * - 统一日期格式：yyyy-MM-dd HH:mm:ss
+ * 
+ * @author SNRT
+ * @since 1.0
  */
 @Configuration
 public class JacksonConfig {
@@ -25,18 +30,21 @@ public class JacksonConfig {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern(DATE_TIME_PATTERN);
 
     /**
-     * 配置全局 ObjectMapper
-     * 注册 JavaTime 模块以支持 Java 8 日期时间类型
+     * 配置全局ObjectMapper
+     * 
+     * 注册JavaTime模块以支持Java 8日期时间类型
+     * 
+     * @return ObjectMapper实例
      */
     @Bean
     @Primary
     public ObjectMapper objectMapper() {
         ObjectMapper objectMapper = new ObjectMapper();
         
-        // 注册 JavaTime 模块
+        // 注册JavaTime模块
         JavaTimeModule javaTimeModule = new JavaTimeModule();
         
-        // 配置 LocalDateTime 的序列化格式
+        // 配置LocalDateTime的序列化格式
         javaTimeModule.addSerializer(LocalDateTime.class, new LocalDateTimeSerializer(DATE_TIME_FORMATTER));
         javaTimeModule.addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer(DATE_TIME_FORMATTER));
         
@@ -46,8 +54,12 @@ public class JacksonConfig {
     }
 
     /**
-     * 配置 RabbitMQ 的 MessageConverter
-     * 使用自定义的 ObjectMapper 来处理消息转换
+     * 配置RabbitMQ的MessageConverter
+     * 
+     * 使用自定义的ObjectMapper来处理消息转换
+     * 
+     * @param objectMapper ObjectMapper实例
+     * @return MessageConverter实例
      */
     @Bean
     public MessageConverter messageConverter(ObjectMapper objectMapper) {

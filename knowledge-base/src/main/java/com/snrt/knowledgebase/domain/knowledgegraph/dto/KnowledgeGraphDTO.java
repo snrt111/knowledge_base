@@ -5,6 +5,14 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * 知识图谱DTO
+ * 
+ * 包含知识图谱的基本信息和关联的节点、关系列表
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 public class KnowledgeGraphDTO {
 

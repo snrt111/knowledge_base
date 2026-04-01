@@ -8,6 +8,15 @@ import lombok.NoArgsConstructor;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 批量操作结果封装
+ * 
+ * 用于封装批量操作的执行结果
+ * 包含成功和失败的条目列表以及统计信息
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -26,15 +35,12 @@ public class BatchOperationResult<T> {
     @Builder.Default
     private List<FailedItem> failedItems = new ArrayList<>();
 
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class FailedItem {
-        private String id;
-        private String reason;
-    }
-
+    /**
+     * 创建空的批量操作结果
+     * 
+     * @param <T> 数据类型
+     * @return BatchOperationResult实例
+     */
     public static <T> BatchOperationResult<T> empty() {
         return BatchOperationResult.<T>builder()
                 .total(0)
@@ -43,5 +49,17 @@ public class BatchOperationResult<T> {
                 .successItems(new ArrayList<>())
                 .failedItems(new ArrayList<>())
                 .build();
+    }
+
+    /**
+     * 失败条目
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class FailedItem {
+        private String id;
+        private String reason;
     }
 }

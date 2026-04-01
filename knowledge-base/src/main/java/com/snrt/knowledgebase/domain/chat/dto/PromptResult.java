@@ -8,6 +8,14 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * 提示词结果DTO
+ * 
+ * 包含构建好的提示词和引用的文档来源列表
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Data
 @Builder
 @NoArgsConstructor

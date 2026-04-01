@@ -21,6 +21,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 知识图谱服务
+ * 
+ * 提供知识图谱的完整CRUD操作：
+ * - 知识图谱的增删改查
+ * - 知识图谱节点的增删改查
+ * - 知识图谱关系的增删改查
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -31,6 +42,15 @@ public class KnowledgeGraphService {
     private final KnowledgeGraphRelationRepository relationRepository;
     private final KnowledgeBaseRepository knowledgeBaseRepository;
 
+    /**
+     * 分页查询知识图谱列表
+     * 
+     * @param knowledgeBaseId 知识库ID（可选）
+     * @param page 页码
+     * @param size 每页大小
+     * @param keyword 搜索关键词（可选）
+     * @return 知识图谱分页结果
+     */
     @Transactional(readOnly = true)
     public PageResult<KnowledgeGraphDTO> listKnowledgeGraphs(String knowledgeBaseId, Integer page, Integer size, String keyword) {
         Pageable pageable = PageRequest.of(page - 1, size, Sort.by("updateTime").descending());
@@ -59,6 +79,12 @@ public class KnowledgeGraphService {
         return PageResult.of(dtoList, (long) kgList.size(), page, size);
     }
 
+    /**
+     * 根据UUID获取知识图谱详情
+     * 
+     * @param uuid 知识图谱UUID
+     * @return 知识图谱详情
+     */
     @Transactional(readOnly = true)
     public KnowledgeGraphDTO getKnowledgeGraph(String uuid) {
         KnowledgeGraph kg = knowledgeGraphRepository.findByUuidAndIsDeletedFalse(uuid)
@@ -66,6 +92,12 @@ public class KnowledgeGraphService {
         return convertToDTO(kg);
     }
 
+    /**
+     * 创建知识图谱
+     * 
+     * @param request 创建请求
+     * @return 创建的知识图谱详情
+     */
     @Transactional
     public KnowledgeGraphDTO createKnowledgeGraph(CreateKnowledgeGraphRequest request) {
         var kb = knowledgeBaseRepository.findByIdAndIsDeletedFalse(request.getKnowledgeBaseId())
@@ -83,6 +115,13 @@ public class KnowledgeGraphService {
         return convertToDTO(saved);
     }
 
+    /**
+     * 更新知识图谱
+     * 
+     * @param uuid 知识图谱UUID
+     * @param request 更新请求
+     * @return 更新后的知识图谱详情
+     */
     @Transactional
     public KnowledgeGraphDTO updateKnowledgeGraph(String uuid, UpdateKnowledgeGraphRequest request) {
         KnowledgeGraph kg = knowledgeGraphRepository.findByUuidAndIsDeletedFalse(uuid)
@@ -98,6 +137,11 @@ public class KnowledgeGraphService {
         return convertToDTO(saved);
     }
 
+    /**
+     * 删除知识图谱（软删除）
+     * 
+     * @param uuid 知识图谱UUID
+     */
     @Transactional
     public void deleteKnowledgeGraph(String uuid) {
         KnowledgeGraph kg = knowledgeGraphRepository.findByUuidAndIsDeletedFalse(uuid)
@@ -107,6 +151,12 @@ public class KnowledgeGraphService {
         log.info("知识图谱删除成功: uuid={}, name={}", uuid, kg.getName());
     }
 
+    /**
+     * 查询所有知识图谱
+     * 
+     * @param knowledgeBaseId 知识库ID（可选）
+     * @return 知识图谱列表
+     */
     @Transactional(readOnly = true)
     public List<KnowledgeGraphDTO> listAllKnowledgeGraphs(String knowledgeBaseId) {
         List<KnowledgeGraph> kgList = knowledgeGraphRepository.findAll();
@@ -120,6 +170,14 @@ public class KnowledgeGraphService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 分页查询知识图谱节点列表
+     * 
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @param page 页码
+     * @param size 每页大小
+     * @return 节点分页结果
+     */
     @Transactional(readOnly = true)
     public PageResult<KnowledgeGraphNodeDTO> listNodes(String knowledgeGraphUuid, Integer page, Integer size) {
         Pageable pageable = PageRequest.of(page - 1, size);
@@ -136,6 +194,12 @@ public class KnowledgeGraphService {
         return PageResult.of(dtoList, (long) nodeList.size(), page, size);
     }
 
+    /**
+     * 查询所有知识图谱节点
+     * 
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @return 节点列表
+     */
     @Transactional(readOnly = true)
     public List<KnowledgeGraphNodeDTO> listAllNodes(String knowledgeGraphUuid) {
         List<KnowledgeGraphNodeEntity> nodeList = nodeRepository.findByKnowledgeGraphUuidAndIsDeletedFalse(knowledgeGraphUuid);
@@ -144,6 +208,13 @@ public class KnowledgeGraphService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 创建知识图谱节点
+     * 
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @param request 创建请求
+     * @return 创建的节点详情
+     */
     @Transactional
     public KnowledgeGraphNodeDTO createNode(String knowledgeGraphUuid, KnowledgeGraphNodeCreateRequest request) {
         var kg = knowledgeGraphRepository.findByUuidAndIsDeletedFalse(knowledgeGraphUuid)
@@ -167,6 +238,11 @@ public class KnowledgeGraphService {
         return convertNodeToDTO(saved);
     }
 
+    /**
+     * 删除知识图谱节点（软删除）
+     * 
+     * @param uuid 节点UUID
+     */
     @Transactional
     public void deleteNode(String uuid) {
         KnowledgeGraphNodeEntity node = nodeRepository.findByUuidAndIsDeletedFalse(uuid)
@@ -176,6 +252,14 @@ public class KnowledgeGraphService {
         log.info("知识图谱节点删除成功: uuid={}", uuid);
     }
 
+    /**
+     * 分页查询知识图谱关系列表
+     * 
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @param page 页码
+     * @param size 每页大小
+     * @return 关系分页结果
+     */
     @Transactional(readOnly = true)
     public PageResult<KnowledgeGraphRelationDTO> listRelations(String knowledgeGraphUuid, Integer page, Integer size) {
         Pageable pageable = PageRequest.of(page - 1, size);
@@ -192,6 +276,12 @@ public class KnowledgeGraphService {
         return PageResult.of(dtoList, (long) relationList.size(), page, size);
     }
 
+    /**
+     * 查询所有知识图谱关系
+     * 
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @return 关系列表
+     */
     @Transactional(readOnly = true)
     public List<KnowledgeGraphRelationDTO> listAllRelations(String knowledgeGraphUuid) {
         List<KnowledgeGraphRelationEntity> relationList = relationRepository.findByKnowledgeGraphUuidAndIsDeletedFalse(knowledgeGraphUuid);
@@ -200,6 +290,13 @@ public class KnowledgeGraphService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 创建知识图谱关系
+     * 
+     * @param knowledgeGraphUuid 知识图谱UUID
+     * @param request 创建请求
+     * @return 创建的关系详情
+     */
     @Transactional
     public KnowledgeGraphRelationDTO createRelation(String knowledgeGraphUuid, KnowledgeGraphRelationCreateRequest request) {
         var kg = knowledgeGraphRepository.findByUuidAndIsDeletedFalse(knowledgeGraphUuid)
@@ -224,6 +321,11 @@ public class KnowledgeGraphService {
         return convertRelationToDTO(saved);
     }
 
+    /**
+     * 删除知识图谱关系（软删除）
+     * 
+     * @param uuid 关系UUID
+     */
     @Transactional
     public void deleteRelation(String uuid) {
         KnowledgeGraphRelationEntity relation = relationRepository.findByUuidAndIsDeletedFalse(uuid)
@@ -233,6 +335,12 @@ public class KnowledgeGraphService {
         log.info("知识图谱关系删除成功: uuid={}", uuid);
     }
 
+    /**
+     * 将知识图谱实体转换为DTO
+     * 
+     * @param kg 知识图谱实体
+     * @return 知识图谱DTO
+     */
     private KnowledgeGraphDTO convertToDTO(KnowledgeGraph kg) {
         KnowledgeGraphDTO dto = new KnowledgeGraphDTO();
         dto.setId(kg.getUuid());
@@ -250,6 +358,12 @@ public class KnowledgeGraphService {
         return dto;
     }
 
+    /**
+     * 将知识图谱节点实体转换为DTO
+     * 
+     * @param node 节点实体
+     * @return 节点DTO
+     */
     private KnowledgeGraphNodeDTO convertNodeToDTO(KnowledgeGraphNodeEntity node) {
         KnowledgeGraphNodeDTO dto = new KnowledgeGraphNodeDTO();
         dto.setId(node.getUuid());
@@ -262,6 +376,12 @@ public class KnowledgeGraphService {
         return dto;
     }
 
+    /**
+     * 将知识图谱关系实体转换为DTO
+     * 
+     * @param relation 关系实体
+     * @return 关系DTO
+     */
     private KnowledgeGraphRelationDTO convertRelationToDTO(KnowledgeGraphRelationEntity relation) {
         KnowledgeGraphRelationDTO dto = new KnowledgeGraphRelationDTO();
         dto.setId(relation.getUuid());

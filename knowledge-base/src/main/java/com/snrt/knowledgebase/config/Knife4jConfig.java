@@ -8,9 +8,25 @@ import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Knife4j配置
+ * 
+ * 配置Swagger/OpenAPI文档：
+ * - API基本信息
+ * - 联系方式
+ * - 分组配置
+ * 
+ * @author SNRT
+ * @since 1.0
+ */
 @Configuration
 public class Knife4jConfig {
 
+    /**
+     * 创建自定义OpenAPI文档
+     * 
+     * @return OpenAPI实例
+     */
     @Bean
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
@@ -27,6 +43,11 @@ public class Knife4jConfig {
                                 .url("https://www.apache.org/licenses/LICENSE-2.0")));
     }
 
+    /**
+     * 创建默认API分组
+     * 
+     * @return GroupedOpenApi实例
+     */
     @Bean
     public GroupedOpenApi defaultApi() {
         return GroupedOpenApi.builder()
