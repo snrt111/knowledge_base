@@ -6,7 +6,6 @@ uploads/
 !**/target/
 
 /uploads/*
-/docs/*
 target/*
 
 ### STS ###

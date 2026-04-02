@@ -25,6 +25,14 @@
           <el-icon><Document /></el-icon>
           <span>文档管理</span>
         </el-menu-item>
+        <el-menu-item index="/user" v-if="user?.permissions?.includes('user:menu')">
+          <el-icon><User /></el-icon>
+          <span>用户管理</span>
+        </el-menu-item>
+        <el-menu-item index="/role" v-if="user?.permissions?.includes('role:menu')">
+          <el-icon><UserFilled /></el-icon>
+          <span>角色管理</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -56,16 +64,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { chatApi } from '@/api/chat'
+import { User, UserFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const isConnected = ref(false)
-const userStr = localStorage.getItem('user')
-const user = ref(userStr && userStr !== 'undefined' ? JSON.parse(userStr) : null)
+
+// 使用计算属性获取用户信息，确保响应式更新
+const user = computed(() => {
+  const userStr = localStorage.getItem('user')
+  return userStr && userStr !== 'undefined' ? JSON.parse(userStr) : null
+})
+
+// 调试信息
+console.log('User info:', user.value)
+console.log('User permissions:', user.value?.permissions)
+console.log('User has user:menu permission:', user.value?.permissions?.includes('user:menu'))
+console.log('User has role:menu permission:', user.value?.permissions?.includes('role:menu'))
 
 const activeMenu = computed(() => route.path)
 

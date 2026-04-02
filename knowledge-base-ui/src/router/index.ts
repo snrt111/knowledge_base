@@ -41,6 +41,18 @@ const router = createRouter({
           name: 'Documents',
           component: () => import('@/views/DocumentsView.vue'),
           meta: { title: '文档管理', icon: 'Document' }
+        },
+        {
+          path: 'user',
+          name: 'User',
+          component: () => import('@/views/user/UserListView.vue'),
+          meta: { title: '用户管理', icon: 'User', permission: 'user:menu' }
+        },
+        {
+          path: 'role',
+          name: 'Role',
+          component: () => import('@/views/user/RoleListView.vue'),
+          meta: { title: '角色管理', icon: 'UserFilled', permission: 'role:menu' }
         }
       ]
     }

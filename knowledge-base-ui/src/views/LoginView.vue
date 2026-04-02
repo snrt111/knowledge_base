@@ -60,22 +60,23 @@ const loginRules = {
 
 const handleLogin = async () => {
   if (!loginFormRef.value) return
-  
+
   await loginFormRef.value.validate(async (valid: boolean) => {
     if (valid) {
       loading.value = true
       try {
         const response = await login(loginForm)
-        const { token, user } = response.data
-        
+        // 从响应中提取数据，response.data 是 ApiResponse，response.data.data 包含实际的登录数据
+        const { token, user } = response.data.data
+
         // 保存 token 和用户信息到本地存储
         localStorage.setItem('token', token)
         localStorage.setItem('user', JSON.stringify(user))
-        
+
         ElMessage.success('登录成功')
         router.push('/')
       } catch (error: any) {
-        ElMessage.error(error.response?.data?.message || '登录失败，请检查用户名和密码')
+        ElMessage.error(error.message || '登录失败，请检查用户名和密码')
       } finally {
         loading.value = false
       }

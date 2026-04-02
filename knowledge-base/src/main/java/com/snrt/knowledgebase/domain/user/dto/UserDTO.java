@@ -3,15 +3,8 @@ package com.snrt.knowledgebase.domain.user.dto;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
-/**
- * 用户信息 DTO
- * 
- * 包含用户的基本信息，用于返回给前端
- * 
- * @author SNRT
- * @since 1.0
- */
 @Data
 public class UserDTO {
 
@@ -21,6 +14,9 @@ public class UserDTO {
     private String email;
     private String phone;
     private String avatar;
+    private Boolean isActive;
     private LocalDateTime createTime;
     private LocalDateTime lastLoginTime;
+    private List<RoleDTO> roles;
+    private List<String> permissions;
 }

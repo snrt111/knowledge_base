@@ -23,8 +23,8 @@ import java.util.Map;
 public class VectorDocument {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "id", length = 255)
+    private String id;
 
     @Column(name = "content", columnDefinition = "text")
     private String content;

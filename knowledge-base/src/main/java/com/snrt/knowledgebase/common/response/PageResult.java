@@ -21,6 +21,9 @@ public class PageResult<T> {
     private Integer page;
     private Integer size;
 
+    public PageResult() {
+    }
+
     /**
      * 构造分页结果
      * 
@@ -34,6 +37,18 @@ public class PageResult<T> {
         this.total = total;
         this.page = page;
         this.size = size;
+    }
+
+    /**
+     * 构造分页结果（便捷方法）
+     * 
+     * @param list 数据列表
+     * @param total 总记录数
+     * @param totalPages 总页数
+     */
+    public PageResult(List<T> list, Long total, Integer totalPages) {
+        this.list = list;
+        this.total = total;
     }
 
     /**
