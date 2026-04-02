@@ -1,11 +1,19 @@
 <template>
   <div class="role-list-container">
-    <div class="page-header">
-      <h2>角色管理</h2>
-      <el-button type="primary" @click="showCreateDialog = true">新增角色</el-button>
-    </div>
+    <el-card shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span class="title">
+            <el-icon><UserFilled /></el-icon>
+            角色管理
+          </span>
+          <el-button type="primary" @click="showCreateDialog = true">
+            <el-icon><Plus /></el-icon>
+            新增角色
+          </el-button>
+        </div>
+      </template>
 
-    <el-card class="search-card">
       <el-form :inline="true" :model="queryParams" class="search-form">
         <el-form-item label="角色名称">
           <el-input v-model="queryParams.name" placeholder="请输入角色名称" clearable />
@@ -14,13 +22,14 @@
           <el-input v-model="queryParams.code" placeholder="请输入角色编码" clearable />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button type="primary" @click="handleSearch">
+            <el-icon><Search /></el-icon>
+            查询
+          </el-button>
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
-    </el-card>
 
-    <el-card class="table-card">
       <el-table :data="tableData" stripe border v-loading="loading">
         <el-table-column prop="name" label="角色名称" width="150" />
         <el-table-column prop="code" label="角色编码" width="150" />
@@ -36,25 +45,37 @@
         <el-table-column prop="createTime" label="创建时间" width="180" />
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button type="primary" link size="small" @click="handleAssignPermission(row)">分配权限</el-button>
+            <el-button type="primary" link size="small" @click="handleEdit(row)">
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+            <el-button type="primary" link size="small" @click="handleAssignPermission(row)">
+              <el-icon><Lock /></el-icon>
+              分配权限
+            </el-button>
             <el-button type="warning" link size="small" @click="handleToggle(row)">
+              <el-icon><Switch /></el-icon>
               {{ row.isActive ? '禁用' : '启用' }}
             </el-button>
-            <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button type="danger" link size="small" @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="queryParams.pageNum"
-        v-model:page-size="queryParams.pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSearch"
-        @current-change="handleSearch"
-      />
+      <div class="pagination">
+        <el-pagination
+          v-model:current-page="queryParams.pageNum"
+          v-model:page-size="queryParams.pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSearch"
+          @current-change="handleSearch"
+        />
+      </div>
     </el-card>
 
     <!-- 新增角色对话框 -->
@@ -123,6 +144,15 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import {
+  UserFilled,
+  Plus,
+  Search,
+  Edit,
+  Lock,
+  Switch,
+  Delete
+} from '@element-plus/icons-vue'
 import {
   getRolePage,
   createRole,
@@ -199,10 +229,9 @@ const fetchData = async () => {
   loading.value = true
   try {
     const response = await getRolePage(queryParams)
-    // 从响应中提取数据，response.data 是 ApiResponse，response.data.data 包含实际的分页数据
-    const pageData = response.data.data
-    tableData.value = pageData.list || []
-    total.value = pageData.total || 0
+    // response.data 是 PageResult<Role>
+    tableData.value = response.data.list || []
+    total.value = response.data.total || 0
   } catch (error) {
     ElMessage.error('获取数据失败')
   } finally {
@@ -213,8 +242,8 @@ const fetchData = async () => {
 const fetchPermissionTree = async () => {
   try {
     const response = await getPermissionTree()
-    // 从响应中提取数据，response.data 是 ApiResponse，response.data.data 包含实际的权限树
-    permissionTree.value = response.data.data || []
+    // response.data 是 Permission[]
+    permissionTree.value = response.data || []
   } catch (error) {
     ElMessage.error('获取权限树失败')
   }
@@ -234,7 +263,7 @@ const handleReset = () => {
 
 const submitCreate = async () => {
   if (!createFormRef.value) return
-  
+
   await createFormRef.value.validate(async (valid) => {
     if (valid) {
       try {
@@ -266,7 +295,7 @@ const handleEdit = (row: Role) => {
 
 const submitEdit = async () => {
   if (!editFormRef.value) return
-  
+
   await editFormRef.value.validate(async (valid) => {
     if (valid) {
       try {
@@ -295,7 +324,7 @@ const handleAssignPermission = (row: Role) => {
 
 const submitAssignPermission = async () => {
   if (!currentRole.value) return
-  
+
   try {
     await assignPermissions(currentRole.value.id, selectedPermissionIds.value)
     ElMessage.success('分配权限成功')
@@ -341,22 +370,31 @@ onMounted(() => {
 
 <style scoped>
 .role-list-container {
-  padding: 20px;
+  height: 100%;
 }
 
-.page-header {
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.search-form {
   margin-bottom: 20px;
 }
 
-.search-card {
-  margin-bottom: 20px;
-}
-
-.table-card {
-  padding: 20px;
+.pagination {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .permission-tree {

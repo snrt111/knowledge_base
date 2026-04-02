@@ -1,11 +1,19 @@
 <template>
   <div class="user-list-container">
-    <div class="page-header">
-      <h2>用户管理</h2>
-      <el-button type="primary" @click="showCreateDialog = true">新增用户</el-button>
-    </div>
+    <el-card shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span class="title">
+            <el-icon><User /></el-icon>
+            用户管理
+          </span>
+          <el-button type="primary" @click="showCreateDialog = true">
+            <el-icon><Plus /></el-icon>
+            新增用户
+          </el-button>
+        </div>
+      </template>
 
-    <el-card class="search-card">
       <el-form :inline="true" :model="queryParams" class="search-form">
         <el-form-item label="用户名">
           <el-input v-model="queryParams.username" placeholder="请输入用户名" clearable />
@@ -23,13 +31,14 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button type="primary" @click="handleSearch">
+            <el-icon><Search /></el-icon>
+            查询
+          </el-button>
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
-    </el-card>
 
-    <el-card class="table-card">
       <el-table :data="tableData" stripe border v-loading="loading">
         <el-table-column prop="username" label="用户名" width="150" />
         <el-table-column prop="nickname" label="昵称" width="150" />
@@ -45,26 +54,41 @@
         <el-table-column prop="createTime" label="创建时间" width="180" />
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button type="primary" link size="small" @click="handleAssignRole(row)">分配角色</el-button>
-            <el-button type="warning" link size="small" @click="handleResetPassword(row)">重置密码</el-button>
+            <el-button type="primary" link size="small" @click="handleEdit(row)">
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+            <el-button type="primary" link size="small" @click="handleAssignRole(row)">
+              <el-icon><UserFilled /></el-icon>
+              分配角色
+            </el-button>
+            <el-button type="warning" link size="small" @click="handleResetPassword(row)">
+              <el-icon><Key /></el-icon>
+              重置密码
+            </el-button>
             <el-button type="warning" link size="small" @click="handleToggle(row)">
+              <el-icon><Switch /></el-icon>
               {{ row.isActive ? '禁用' : '启用' }}
             </el-button>
-            <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button type="danger" link size="small" @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="queryParams.pageNum"
-        v-model:page-size="queryParams.pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSearch"
-        @current-change="handleSearch"
-      />
+      <div class="pagination">
+        <el-pagination
+          v-model:current-page="queryParams.pageNum"
+          v-model:page-size="queryParams.pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSearch"
+          @current-change="handleSearch"
+        />
+      </div>
     </el-card>
 
     <!-- 新增用户对话框 -->
@@ -137,6 +161,16 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
+  User,
+  Plus,
+  Search,
+  Edit,
+  UserFilled,
+  Key,
+  Switch,
+  Delete
+} from '@element-plus/icons-vue'
+import {
   getUserPage,
   createUser,
   updateUser,
@@ -146,10 +180,10 @@ import {
   assignRoles
 } from '@/api/user'
 import { getAllRoles } from '@/api/role'
-import type { User, UserQuery, UserCreate, UserUpdate, Role } from '@/types/user'
+import type { User as UserType, UserQuery, UserCreate, UserUpdate, Role } from '@/types/user'
 
 const loading = ref(false)
-const tableData = ref<User[]>([])
+const tableData = ref<UserType[]>([])
 const total = ref(0)
 const allRoles = ref<Role[]>([])
 
@@ -209,17 +243,16 @@ const editRules: FormRules = {
 
 // 分配角色对话框
 const showAssignRoleDialog = ref(false)
-const currentUser = ref<User | null>(null)
+const currentUser = ref<UserType | null>(null)
 const selectedRoleIds = ref<string[]>([])
 
 const fetchData = async () => {
   loading.value = true
   try {
     const response = await getUserPage(queryParams)
-    // 从响应中提取数据，response.data 是 ApiResponse，response.data.data 包含实际的分页数据
-    const pageData = response.data.data
-    tableData.value = pageData.list || []
-    total.value = pageData.total || 0
+    // response.data 是 PageResult<User>
+    tableData.value = response.data.list || []
+    total.value = response.data.total || 0
   } catch (error) {
     ElMessage.error('获取数据失败')
   } finally {
@@ -230,8 +263,8 @@ const fetchData = async () => {
 const fetchAllRoles = async () => {
   try {
     const response = await getAllRoles()
-    // 从响应中提取数据，response.data 是 ApiResponse，response.data.data 包含实际的角色列表
-    allRoles.value = response.data.data || []
+    // response.data 是 Role[]
+    allRoles.value = response.data || []
   } catch (error) {
     ElMessage.error('获取角色列表失败')
   }
@@ -253,7 +286,7 @@ const handleReset = () => {
 
 const submitCreate = async () => {
   if (!createFormRef.value) return
-  
+
   await createFormRef.value.validate(async (valid) => {
     if (valid) {
       try {
@@ -275,7 +308,7 @@ const submitCreate = async () => {
   })
 }
 
-const handleEdit = (row: User) => {
+const handleEdit = (row: UserType) => {
   editForm.id = row.id
   editForm.username = row.username
   editForm.nickname = row.nickname || ''
@@ -287,7 +320,7 @@ const handleEdit = (row: User) => {
 
 const submitEdit = async () => {
   if (!editFormRef.value) return
-  
+
   await editFormRef.value.validate(async (valid) => {
     if (valid) {
       try {
@@ -308,7 +341,7 @@ const submitEdit = async () => {
   })
 }
 
-const handleAssignRole = (row: User) => {
+const handleAssignRole = (row: UserType) => {
   currentUser.value = row
   selectedRoleIds.value = row.roles?.map(r => r.id) || []
   showAssignRoleDialog.value = true
@@ -316,7 +349,7 @@ const handleAssignRole = (row: User) => {
 
 const submitAssignRole = async () => {
   if (!currentUser.value) return
-  
+
   try {
     await assignRoles(currentUser.value.id, selectedRoleIds.value)
     ElMessage.success('分配角色成功')
@@ -327,7 +360,7 @@ const submitAssignRole = async () => {
   }
 }
 
-const handleResetPassword = async (row: User) => {
+const handleResetPassword = async (row: UserType) => {
   try {
     await ElMessageBox.confirm('确定要重置该用户的密码吗？', '提示', {
       confirmButtonText: '确定',
@@ -343,7 +376,7 @@ const handleResetPassword = async (row: User) => {
   }
 }
 
-const handleToggle = async (row: User) => {
+const handleToggle = async (row: UserType) => {
   try {
     await toggleUser(row.id)
     ElMessage.success(row.isActive ? '禁用成功' : '启用成功')
@@ -353,7 +386,7 @@ const handleToggle = async (row: User) => {
   }
 }
 
-const handleDelete = async (row: User) => {
+const handleDelete = async (row: UserType) => {
   try {
     await ElMessageBox.confirm('确定要删除该用户吗？', '提示', {
       confirmButtonText: '确定',
@@ -378,22 +411,31 @@ onMounted(() => {
 
 <style scoped>
 .user-list-container {
-  padding: 20px;
+  height: 100%;
 }
 
-.page-header {
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.search-form {
   margin-bottom: 20px;
 }
 
-.search-card {
-  margin-bottom: 20px;
-}
-
-.table-card {
-  padding: 20px;
+.pagination {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .el-checkbox-group {
