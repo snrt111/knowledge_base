@@ -1,39 +1,44 @@
 import http from './http'
-import type { User, UserQuery, UserCreate, UserUpdate, AssignRole, ResetPassword, PageResult } from '@/types'
-import type { Role } from '@/types/user'
+import type { ApiResponse, PageResult } from '@/types'
+import type { User, UserQuery, UserCreate, UserUpdate, AssignRole, ResetPassword, Role } from '@/types/user'
 
-export const getUserPage = (params: UserQuery) => {
-  return http.get<PageResult<User>>('/users', { params })
+export const getUserPage = async (params: UserQuery) => {
+  const response = await http.get<ApiResponse<PageResult<User>>>('/users', { params })
+  return response.data.data
 }
 
-export const getUserById = (id: string) => {
-  return http.get<User>(`/users/${id}`)
+export const getUserById = async (id: string) => {
+  const response = await http.get<ApiResponse<User>>(`/users/${id}`)
+  return response.data.data
 }
 
-export const createUser = (data: UserCreate) => {
-  return http.post<User>('/users', data)
+export const createUser = async (data: UserCreate) => {
+  const response = await http.post<ApiResponse<User>>('/users', data)
+  return response.data.data
 }
 
-export const updateUser = (data: UserUpdate) => {
-  return http.put<User>(`/users/${data.id}`, data)
+export const updateUser = async (data: UserUpdate) => {
+  const response = await http.put<ApiResponse<User>>(`/users/${data.id}`, data)
+  return response.data.data
 }
 
-export const deleteUser = (id: string) => {
-  return http.delete(`/users/${id}`)
+export const deleteUser = async (id: string) => {
+  await http.delete<ApiResponse<void>>(`/users/${id}`)
 }
 
-export const toggleUser = (id: string) => {
-  return http.put(`/users/${id}/toggle`)
+export const toggleUser = async (id: string) => {
+  await http.put<ApiResponse<void>>(`/users/${id}/toggle`)
 }
 
-export const resetPassword = (id: string, newPassword: string) => {
-  return http.put(`/users/${id}/reset-password`, { userId: id, newPassword })
+export const resetPassword = async (id: string, newPassword: string) => {
+  await http.put<ApiResponse<void>>(`/users/${id}/reset-password`, { userId: id, newPassword })
 }
 
-export const assignRoles = (userId: string, roleIds: string[]) => {
-  return http.put(`/users/${userId}/roles`, { userId, roleIds })
+export const assignRoles = async (userId: string, roleIds: string[]) => {
+  await http.put<ApiResponse<void>>(`/users/${userId}/roles`, { userId, roleIds })
 }
 
-export const getUserRoles = (id: string) => {
-  return http.get<Role[]>(`/users/${id}/roles`)
+export const getUserRoles = async (id: string) => {
+  const response = await http.get<ApiResponse<Role[]>>(`/users/${id}/roles`)
+  return response.data.data
 }

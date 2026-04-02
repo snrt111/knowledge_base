@@ -228,10 +228,9 @@ const selectedPermissionIds = ref<string[]>([])
 const fetchData = async () => {
   loading.value = true
   try {
-    const response = await getRolePage(queryParams)
-    // response.data 是 PageResult<Role>
-    tableData.value = response.data.list || []
-    total.value = response.data.total || 0
+    const pageResult = await getRolePage(queryParams)
+    tableData.value = pageResult.list || []
+    total.value = pageResult.total || 0
   } catch (error) {
     ElMessage.error('获取数据失败')
   } finally {
@@ -241,9 +240,7 @@ const fetchData = async () => {
 
 const fetchPermissionTree = async () => {
   try {
-    const response = await getPermissionTree()
-    // response.data 是 Permission[]
-    permissionTree.value = response.data || []
+    permissionTree.value = await getPermissionTree() || []
   } catch (error) {
     ElMessage.error('获取权限树失败')
   }

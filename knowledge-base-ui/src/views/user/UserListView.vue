@@ -249,10 +249,9 @@ const selectedRoleIds = ref<string[]>([])
 const fetchData = async () => {
   loading.value = true
   try {
-    const response = await getUserPage(queryParams)
-    // response.data 是 PageResult<User>
-    tableData.value = response.data.list || []
-    total.value = response.data.total || 0
+    const pageResult = await getUserPage(queryParams)
+    tableData.value = pageResult.list || []
+    total.value = pageResult.total || 0
   } catch (error) {
     ElMessage.error('获取数据失败')
   } finally {
@@ -262,9 +261,7 @@ const fetchData = async () => {
 
 const fetchAllRoles = async () => {
   try {
-    const response = await getAllRoles()
-    // response.data 是 Role[]
-    allRoles.value = response.data || []
+    allRoles.value = await getAllRoles() || []
   } catch (error) {
     ElMessage.error('获取角色列表失败')
   }

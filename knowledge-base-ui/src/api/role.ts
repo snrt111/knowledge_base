@@ -1,39 +1,45 @@
 import http from './http'
-import type { Role, RoleQuery, RoleCreate, RoleUpdate, AssignPermission, PageResult } from '@/types'
-import type { Permission } from '@/types/user'
+import type { ApiResponse, PageResult } from '@/types'
+import type { Role, RoleQuery, RoleCreate, RoleUpdate, AssignPermission, Permission } from '@/types/user'
 
-export const getRolePage = (params: RoleQuery) => {
-  return http.get<PageResult<Role>>('/roles', { params })
+export const getRolePage = async (params: RoleQuery) => {
+  const response = await http.get<ApiResponse<PageResult<Role>>>('/roles', { params })
+  return response.data.data
 }
 
-export const getAllRoles = () => {
-  return http.get<Role[]>('/roles/all')
+export const getAllRoles = async () => {
+  const response = await http.get<ApiResponse<Role[]>>('/roles/all')
+  return response.data.data
 }
 
-export const getRoleById = (id: string) => {
-  return http.get<Role>(`/roles/${id}`)
+export const getRoleById = async (id: string) => {
+  const response = await http.get<ApiResponse<Role>>(`/roles/${id}`)
+  return response.data.data
 }
 
-export const createRole = (data: RoleCreate) => {
-  return http.post<Role>('/roles', data)
+export const createRole = async (data: RoleCreate) => {
+  const response = await http.post<ApiResponse<Role>>('/roles', data)
+  return response.data.data
 }
 
-export const updateRole = (data: RoleUpdate) => {
-  return http.put<Role>(`/roles/${data.id}`, data)
+export const updateRole = async (data: RoleUpdate) => {
+  const response = await http.put<ApiResponse<Role>>(`/roles/${data.id}`, data)
+  return response.data.data
 }
 
-export const deleteRole = (id: string) => {
-  return http.delete(`/roles/${id}`)
+export const deleteRole = async (id: string) => {
+  await http.delete<ApiResponse<void>>(`/roles/${id}`)
 }
 
-export const toggleRole = (id: string) => {
-  return http.put(`/roles/${id}/toggle`)
+export const toggleRole = async (id: string) => {
+  await http.put<ApiResponse<void>>(`/roles/${id}/toggle`)
 }
 
-export const assignPermissions = (roleId: string, permissionIds: string[]) => {
-  return http.put(`/roles/${roleId}/permissions`, { roleId, permissionIds })
+export const assignPermissions = async (roleId: string, permissionIds: string[]) => {
+  await http.put<ApiResponse<void>>(`/roles/${roleId}/permissions`, { roleId, permissionIds })
 }
 
-export const getRolePermissions = (id: string) => {
-  return http.get<Permission[]>(`/roles/${id}/permissions`)
+export const getRolePermissions = async (id: string) => {
+  const response = await http.get<ApiResponse<Permission[]>>(`/roles/${id}/permissions`)
+  return response.data.data
 }
